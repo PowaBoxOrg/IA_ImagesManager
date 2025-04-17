@@ -24,20 +24,9 @@ def mostrar_imagen(indice):
         panel.image = img_tk
         panel.pack()
 
-        # Mostrar resolución
-        lbl_resolucion = tk.Label(
-            frame_imagen,
-            text=f"Resolución: {ancho}x{alto}",
-            font=("Arial", 12),
-            bg="#2e2e2e",
-            fg="#ffffff"
-        )
-        lbl_resolucion.pack()
-
-        # Mostrar contador
-        lbl_contador.config(
-            text=f"Imagen {indice + 1} de {len(imagenes)}"
-        )
+        # Actualizar resolución y contador
+        lbl_resolucion.config(text=f"Resolución: {ancho}x{alto}")
+        lbl_contador.config(text=f"Imagen {indice + 1} de {len(imagenes)}")
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo cargar la imagen: {e}")
 
@@ -77,9 +66,9 @@ def copiar_imagen():
 
 if __name__ == "__main__":
     # Configuración
-    carpeta_a = r"C:\Users\M\Pictures\IA\CarpetaA"  # Carpeta de origen
-    carpeta_b = r"C:\Users\M\Pictures\IA\CarpetaB"  # Carpeta destino para imágenes >= 480p
-    carpeta_c = r"C:\Users\M\Pictures\IA\CarpetaC"  # Carpeta destino para imágenes < 480p
+    carpeta_a = r"C:\Users\M\Pictures\IA\THM\THMorg\F"  # Carpeta de origen
+    carpeta_b = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxD"  # Carpeta destino para imágenes >= 480p
+    carpeta_c = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxF"  # Carpeta destino para imágenes < 480p
 
     # Obtener lista de imágenes
     imagenes = [
@@ -105,38 +94,61 @@ if __name__ == "__main__":
     frame_imagen = tk.Frame(ventana, bg="#2e2e2e")
     frame_imagen.pack(expand=True, fill=tk.BOTH)
 
-    # Frame para los controles
-    frame_controles = tk.Frame(ventana, bg="#2e2e2e")
-    frame_controles.pack(fill=tk.X, side=tk.BOTTOM)
+    # Frame para la barra inferior
+    frame_barra = tk.Frame(ventana, bg="#444444")
+    frame_barra.pack(fill=tk.X, side=tk.BOTTOM)
 
     # Botones de navegación
     btn_anterior = tk.Button(
-        frame_controles,
+        frame_barra,
         text="Anterior",
         command=anterior_imagen,
-        bg="#444444",
+        bg="#555555",
         fg="#ffffff"
     )
     btn_anterior.pack(side=tk.LEFT, padx=10, pady=10)
 
     btn_siguiente = tk.Button(
-        frame_controles,
+        frame_barra,
         text="Siguiente",
         command=siguiente_imagen,
-        bg="#444444",
+        bg="#555555",
         fg="#ffffff"
     )
-    btn_siguiente.pack(side=tk.RIGHT, padx=10, pady=10)
+    btn_siguiente.pack(side=tk.LEFT, padx=10, pady=10)
 
     # Botón de copiar
     btn_copiar = tk.Button(
-        frame_controles,
+        frame_barra,
         text="Copiar a carpeta",
         command=copiar_imagen,
-        bg="#444444",
+        bg="#555555",
         fg="#ffffff"
     )
     btn_copiar.pack(side=tk.LEFT, padx=10, pady=10)
 
+    # Etiqueta de resolución
+    lbl_resolucion = tk.Label(
+        frame_barra,
+        text="Resolución: ",
+        font=("Arial", 12),
+        bg="#444444",
+        fg="#ffffff"
+    )
+    lbl_resolucion.pack(side=tk.RIGHT, padx=10)
+
     # Contador de imágenes
     lbl_contador = tk.Label(
+        frame_barra,
+        text="",
+        font=("Arial", 12),
+        bg="#444444",
+        fg="#ffffff"
+    )
+    lbl_contador.pack(side=tk.RIGHT, padx=10)
+
+    # Mostrar la primera imagen
+    mostrar_imagen(indice_actual)
+
+    # Iniciar el loop de la ventana
+    ventana.mainloop()
