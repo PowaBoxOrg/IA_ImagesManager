@@ -72,8 +72,9 @@ def saltar_a_imagen(event=None):
         if 0 <= indice < len(imagenes):
             indice_actual = indice
             mostrar_imagen(indice_actual)
+            frame_imagen.focus_set()  # Cambiar el enfoque al frame de la imagen
         else:
-            messagebox.showwarning("Índice inválido", f"Ingrese un número entre 1 y {len(imagenes)}.")
+            messagebox.showwarning("Índice inválido", f"Ingrese un número entre 1 y {len.imagenes}.")
     except ValueError:
         messagebox.showerror("Error", "Por favor, ingrese un número válido.")
 
