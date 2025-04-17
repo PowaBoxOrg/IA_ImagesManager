@@ -1,7 +1,10 @@
 import os
 import imagehash
-from PIL import Image
+from PIL import Image, ImageTk
 from collections import defaultdict
+import tkinter as tk
+from tkinter import ttk
+from datetime import datetime
 
 def obtener_valor_numerico(nombre):
     """Extrae el valor numérico del nombre del archivo."""
@@ -66,6 +69,84 @@ def encontrar_imagenes_duplicadas(carpeta, umbral_similitud=5):
 
     return duplicados_filtrados
 
+def mostrar_grupos_duplicados(duplicados):
+    """
+    Muestra los grupos de imágenes duplicadas en una ventana gráfica.
+    
+    Args:
+        duplicados (dict): Grupos de imágenes duplicadas (clave = hash, valor = lista de rutas).
+    """
+    # Crear ventana principal
+    ventana = tk.Tk()
+    ventana.title("Grupos de Imágenes Duplicadas")
+    ventana.geometry("800x600")
+    
+    # Variables para la navegación
+    grupos = list(duplicados.items())
+    total_grupos = len(grupos)
+    indice_grupo = tk.IntVar(value=0)
+    
+    # Frame para mostrar imágenes
+    frame_imagenes = tk.Frame(ventana)
+    frame_imagenes.pack(fill=tk.BOTH, expand=True)
+    
+    # Frame para la navegación
+    frame_navegacion = tk.Frame(ventana)
+    frame_navegacion.pack(fill=tk.X, side=tk.BOTTOM)
+    
+    def mostrar_grupo(indice):
+        """Actualiza la ventana para mostrar un grupo específico."""
+        for widget in frame_imagenes.winfo_children():
+            widget.destroy()
+        
+        hash_img, rutas = grupos[indice]
+        tk.Label(frame_imagenes, text=f"Grupo {indice + 1} de {total_grupos} (Hash: {hash_img})", font=("Arial", 14)).pack(pady=10)
+        
+        for ruta in rutas:
+            # Mostrar imagen
+            try:
+                img = Image.open(ruta)
+                img.thumbnail((200, 200))  # Redimensionar para que quepa en la ventana
+                img_tk = ImageTk.PhotoImage(img)
+                panel = tk.Label(frame_imagenes, image=img_tk)
+                panel.image = img_tk
+                panel.pack()
+                
+                # Mostrar nombre de archivo
+                nombre_archivo = os.path.basename(ruta)
+                tk.Label(frame_imagenes, text=f"Nombre: {nombre_archivo}", font=("Arial", 10)).pack()
+                
+                # Mostrar fecha de creación
+                fecha_creacion = datetime.fromtimestamp(os.path.getctime(ruta)).strftime('%Y-%m-%d %H:%M:%S')
+                tk.Label(frame_imagenes, text=f"Fecha de creación: {fecha_creacion}", font=("Arial", 10)).pack()
+            except Exception as e:
+                tk.Label(frame_imagenes, text=f"Error al cargar {ruta}: {e}", fg="red").pack()
+    
+    def siguiente_grupo():
+        """Muestra el siguiente grupo."""
+        if indice_grupo.get() < total_grupos - 1:
+            indice_grupo.set(indice_grupo.get() + 1)
+            mostrar_grupo(indice_grupo.get())
+    
+    def anterior_grupo():
+        """Muestra el grupo anterior."""
+        if indice_grupo.get() > 0:
+            indice_grupo.set(indice_grupo.get() - 1)
+            mostrar_grupo(indice_grupo.get())
+    
+    # Botones de navegación
+    btn_anterior = tk.Button(frame_navegacion, text="Anterior", command=anterior_grupo)
+    btn_anterior.pack(side=tk.LEFT, padx=10, pady=10)
+    
+    btn_siguiente = tk.Button(frame_navegacion, text="Siguiente", command=siguiente_grupo)
+    btn_siguiente.pack(side=tk.RIGHT, padx=10, pady=10)
+    
+    # Mostrar el primer grupo
+    mostrar_grupo(indice_grupo.get())
+    
+    # Iniciar el loop de la ventana
+    ventana.mainloop()
+
 if __name__ == "__main__":
     carpeta = r"C:\Users\M\Pictures\IA\THM"  # Ruta fija
     umbral = 5  # Umbral de similitud predeterminado
@@ -75,8 +156,5 @@ if __name__ == "__main__":
     if not duplicados:
         print("✅ No se encontraron imágenes duplicadas.")
     else:
-        print(f"🔍 Se encontraron {len(duplicados)} grupos de imágenes duplicadas/similares:")
-        for i, (hash_img, rutas) in enumerate(duplicados.items(), start=1):
-            print(f"\nGrupo {i} (Hash: {hash_img}):")
-            for ruta in rutas:
-                print(f"  - {ruta}")
+        print(f"🔍 Se encontraron {len(duplicados)} grupos de imágenes duplicadas/similares.")
+        mostrar_grupos_duplicados(duplicados)
