@@ -29,7 +29,7 @@ def renombrar_por_alfabeto(directorio):
         os.rename(ruta_original, nueva_ruta)
         #print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
 
-def renombrar_por_fecha(directorio, prefijo):
+def renombrar_por_fecha(directorio, prefijo, inicio=1):
     # Obtener lista de archivos con sus fechas de creación
     archivos = []
     for nombre_archivo in os.listdir(directorio):
@@ -42,7 +42,8 @@ def renombrar_por_fecha(directorio, prefijo):
     archivos.sort()
     
     # Renombrar archivos numéricamente
-    for indice, (fecha, nombre_original, ruta_original) in enumerate(archivos, start=1):
+    indice = inicio
+    for fecha, nombre_original, ruta_original in archivos:
         extension = os.path.splitext(nombre_original)[1]  # Conservar extensión (.jpg, .png, etc.)
         nuevo_nombre = f"{prefijo}{indice}{extension}"
         nueva_ruta = os.path.join(directorio, nuevo_nombre)
@@ -54,6 +55,7 @@ def renombrar_por_fecha(directorio, prefijo):
             nueva_ruta = os.path.join(directorio, nuevo_nombre)
         
         os.rename(ruta_original, nueva_ruta)
+        indice += 1
         #print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
 
 if __name__ == "__main__":
@@ -65,4 +67,5 @@ if __name__ == "__main__":
     
     # Paso 2: Renombrar numéricamente
     prefijo = ""  # Prefijo opcional (puede ser "" para solo números)
-    renombrar_por_fecha(carpeta, prefijo)
+    inicio = 1  # Número inicial para el renombrado
+    renombrar_por_fecha(carpeta, prefijo, inicio)
