@@ -60,12 +60,12 @@ def renombrar_por_fecha(directorio, prefijo, inicio=1):
 
 if __name__ == "__main__":
     # Configuración
-    carpeta = r"C:\Users\M\Pictures\IA\THM"  # Ruta fija
+    carpeta = r"C:\Users\M\Pictures\IA\THM\THMorg\F"  # Ruta fija
     
     # Paso 1: Renombrar con nombres alfabéticos
     renombrar_por_alfabeto(carpeta)
     
     # Paso 2: Renombrar numéricamente
-    prefijo = ""  # Prefijo opcional (puede ser "" para solo números)
+    prefijo = "F_"  # Prefijo opcional (puede ser "" para solo números)
     inicio = 1  # Número inicial para el renombrado
     renombrar_por_fecha(carpeta, prefijo, inicio)

@@ -31,5 +31,5 @@ def renombrar_por_alfabeto(directorio):
 
 if __name__ == "__main__":
     # Configuración
-    carpeta = r"C:\Users\M\Pictures\IA\THM"  # Ruta fija
+    carpeta = r"C:\Users\M\Pictures\IA\THMFlux\O"  # Ruta fija
     renombrar_por_alfabeto(carpeta)

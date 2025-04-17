@@ -1,5 +1,6 @@
 import os
 import shutil
+import re
 from PIL import Image, ImageTk
 import tkinter as tk
 from tkinter import messagebox
@@ -84,18 +85,24 @@ def saltar_a_imagen(event=None):
     except ValueError:
         messagebox.showerror("Error", "Por favor, ingrese un número válido.")
 
+def obtener_valor_numerico(nombre):
+    """Extrae el valor numérico del nombre del archivo."""
+    partes = re.findall(r'\d+', nombre)  # Encuentra todos los números en el nombre
+    return int(partes[0]) if partes else 0  # Devuelve el primer número encontrado o 0 si no hay números
+
 if __name__ == "__main__":
     # Configuración
     carpeta_a = r"C:\Users\M\Pictures\IA\THM\THMorg\F"  # Carpeta de origen
     carpeta_b = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxD"  # Carpeta destino para imágenes >= 480p
     carpeta_c = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxF"  # Carpeta destino para imágenes < 480p
 
-    # Obtener lista de imágenes
+    # Obtener lista de imágenes y ordenarlas numéricamente
     imagenes = [
         os.path.join(carpeta_a, f)
         for f in os.listdir(carpeta_a)
         if os.path.isfile(os.path.join(carpeta_a, f)) and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
     ]
+    imagenes.sort(key=lambda x: obtener_valor_numerico(os.path.basename(x)))
 
     if not imagenes:
         print("No se encontraron imágenes en la carpeta A.")
