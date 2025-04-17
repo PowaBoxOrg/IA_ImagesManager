@@ -27,7 +27,7 @@ def renombrar_por_alfabeto(directorio):
             nueva_ruta = os.path.join(directorio, nuevo_nombre)
         
         os.rename(ruta_original, nueva_ruta)
-        print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
+        #print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
 
 def renombrar_por_fecha(directorio, prefijo):
     # Obtener lista de archivos con sus fechas de creación
@@ -54,7 +54,7 @@ def renombrar_por_fecha(directorio, prefijo):
             nueva_ruta = os.path.join(directorio, nuevo_nombre)
         
         os.rename(ruta_original, nueva_ruta)
-        print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
+        #print(f'Renombrado: "{nombre_original}" -> "{nuevo_nombre}"')
 
 if __name__ == "__main__":
     # Configuración
