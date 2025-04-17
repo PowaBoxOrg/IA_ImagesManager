@@ -13,19 +13,25 @@ def mostrar_imagen(indice):
     try:
         # Cargar imagen
         img = Image.open(ruta_imagen)
-        ancho, alto = img.size
+        ancho_original, alto_original = img.size
 
-        # Ajustar tamaño de la imagen para que quepa en el canvas
-        img.thumbnail((600, 600))
+        # Ajustar tamaño de la imagen según la altura de la ventana
+        ancho_frame = frame_imagen.winfo_width()
+        alto_frame = frame_imagen.winfo_height()
+        if ancho_frame == 0 or alto_frame == 0:
+            ancho_frame, alto_frame = 800, screen_height - 100  # Valores predeterminados
+
+        img.thumbnail((ancho_frame, alto_frame))
+
         img_tk = ImageTk.PhotoImage(img)
 
         # Mostrar imagen
         panel = tk.Label(frame_imagen, image=img_tk, bg="#2e2e2e")
         panel.image = img_tk
-        panel.pack()
+        panel.pack(expand=True)
 
         # Actualizar resolución y contador
-        lbl_resolucion.config(text=f"Resolución: {ancho}x{alto}")
+        lbl_resolucion.config(text=f"Resolución: {ancho_original}x{alto_original}")
         lbl_contador.config(text=f"Imagen {indice + 1} de {len(imagenes)}")
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo cargar la imagen: {e}")
@@ -101,7 +107,10 @@ if __name__ == "__main__":
     # Crear ventana principal
     ventana = tk.Tk()
     ventana.title("Visualizador de Imágenes")
-    ventana.geometry("800x600")
+
+    # Obtener altura de la pantalla
+    screen_height = ventana.winfo_screenheight()
+    ventana.geometry(f"800x{screen_height}")  # Ajustar la altura de la ventana al tamaño de la pantalla
     ventana.configure(bg="#2e2e2e")
 
     # Frame para la imagen
