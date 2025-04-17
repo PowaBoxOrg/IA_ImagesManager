@@ -64,6 +64,19 @@ def copiar_imagen():
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo copiar la imagen: {e}")
 
+def saltar_a_imagen(event=None):
+    """Salta a una imagen específica según el índice ingresado."""
+    global indice_actual
+    try:
+        indice = int(entry_salto.get()) - 1  # Convertir a índice (restar 1)
+        if 0 <= indice < len(imagenes):
+            indice_actual = indice
+            mostrar_imagen(indice_actual)
+        else:
+            messagebox.showwarning("Índice inválido", f"Ingrese un número entre 1 y {len(imagenes)}.")
+    except ValueError:
+        messagebox.showerror("Error", "Por favor, ingrese un número válido.")
+
 if __name__ == "__main__":
     # Configuración
     carpeta_a = r"C:\Users\M\Pictures\IA\THM\THMorg\F"  # Carpeta de origen
@@ -147,12 +160,41 @@ if __name__ == "__main__":
     )
     lbl_contador.pack(side=tk.RIGHT, padx=10)
 
+    # Campo de entrada para saltar a una imagen específica
+    lbl_salto = tk.Label(
+        frame_barra,
+        text="Ir a imagen:",
+        font=("Arial", 12),
+        bg="#444444",
+        fg="#ffffff"
+    )
+    lbl_salto.pack(side=tk.LEFT, padx=10)
+
+    entry_salto = tk.Entry(
+        frame_barra,
+        font=("Arial", 12),
+        width=5
+    )
+    entry_salto.pack(side=tk.LEFT, padx=5)
+
+    btn_salto = tk.Button(
+        frame_barra,
+        text="Ir",
+        command=saltar_a_imagen,
+        bg="#555555",
+        fg="#ffffff"
+    )
+    btn_salto.pack(side=tk.LEFT, padx=5)
+
+    # Asociar la tecla Enter al campo de entrada para saltar
+    entry_salto.bind("<Return>", saltar_a_imagen)
+
     # Asociar las teclas de flecha, A, D y la tecla Intro a las funciones
     ventana.bind("<Right>", siguiente_imagen)  # Flecha derecha para siguiente
     ventana.bind("<Left>", anterior_imagen)   # Flecha izquierda para anterior
     ventana.bind("d", siguiente_imagen)       # Tecla D para siguiente
     ventana.bind("a", anterior_imagen)        # Tecla A para anterior
-    ventana.bind("<Return>", lambda event: copiar_imagen())  # Tecla Intro para copiar
+    ventana.bind("+", lambda event: copiar_imagen())  # Tecla + para copiar
 
     # Mostrar la primera imagen
     mostrar_imagen(indice_actual)
