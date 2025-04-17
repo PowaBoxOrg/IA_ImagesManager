@@ -60,7 +60,7 @@ def copiar_imagen():
 
         # Copiar imagen
         shutil.copy(ruta_imagen, destino)
-        messagebox.showinfo("Éxito", f"Imagen copiada a {destino}")
+        #messagebox.showinfo("Éxito", f"Imagen copiada a {destino}")
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo copiar la imagen: {e}")
 
