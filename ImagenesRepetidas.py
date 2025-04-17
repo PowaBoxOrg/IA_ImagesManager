@@ -86,9 +86,13 @@ def mostrar_grupos_duplicados(duplicados):
     total_grupos = len(grupos)
     indice_grupo = tk.IntVar(value=0)
     
-    # Frame para mostrar imágenes
-    frame_imagenes = tk.Frame(ventana)
-    frame_imagenes.pack(fill=tk.BOTH, expand=True)
+    # Canvas para mostrar imágenes
+    canvas = tk.Canvas(ventana)
+    canvas.pack(fill=tk.BOTH, expand=True)
+    
+    # Frame dentro del canvas
+    frame_imagenes = tk.Frame(canvas)
+    canvas.create_window((0, 0), window=frame_imagenes, anchor="nw")
     
     # Frame para la navegación
     frame_navegacion = tk.Frame(ventana)
@@ -100,27 +104,32 @@ def mostrar_grupos_duplicados(duplicados):
             widget.destroy()
         
         hash_img, rutas = grupos[indice]
-        tk.Label(frame_imagenes, text=f"Grupo {indice + 1} de {total_grupos} (Hash: {hash_img})", font=("Arial", 14)).pack(pady=10)
+        tk.Label(frame_imagenes, text=f"Grupo {indice + 1} de {total_grupos} (Hash: {hash_img})", font=("Arial", 14)).grid(row=0, column=0, columnspan=len(rutas), pady=10)
         
-        for ruta in rutas:
+        for col, ruta in enumerate(rutas):
             # Mostrar imagen
             try:
                 img = Image.open(ruta)
-                img.thumbnail((200, 200))  # Redimensionar para que quepa en la ventana
+                
+                # Ajustar tamaño de la imagen según el tamaño de la ventana
+                ancho_canvas = canvas.winfo_width() or 800
+                ancho_max = ancho_canvas // len(rutas) - 20
+                img.thumbnail((ancho_max, ancho_max))
+                
                 img_tk = ImageTk.PhotoImage(img)
                 panel = tk.Label(frame_imagenes, image=img_tk)
                 panel.image = img_tk
-                panel.pack()
+                panel.grid(row=1, column=col, padx=10, pady=10)
                 
                 # Mostrar nombre de archivo
                 nombre_archivo = os.path.basename(ruta)
-                tk.Label(frame_imagenes, text=f"Nombre: {nombre_archivo}", font=("Arial", 10)).pack()
+                tk.Label(frame_imagenes, text=f"Nombre: {nombre_archivo}", font=("Arial", 10)).grid(row=2, column=col)
                 
                 # Mostrar fecha de creación
                 fecha_creacion = datetime.fromtimestamp(os.path.getctime(ruta)).strftime('%Y-%m-%d %H:%M:%S')
-                tk.Label(frame_imagenes, text=f"Fecha de creación: {fecha_creacion}", font=("Arial", 10)).pack()
+                tk.Label(frame_imagenes, text=f"Fecha de creación: {fecha_creacion}", font=("Arial", 10)).grid(row=3, column=col)
             except Exception as e:
-                tk.Label(frame_imagenes, text=f"Error al cargar {ruta}: {e}", fg="red").pack()
+                tk.Label(frame_imagenes, text=f"Error al cargar {ruta}: {e}", fg="red").grid(row=1, column=col)
     
     def siguiente_grupo():
         """Muestra el siguiente grupo."""
@@ -143,6 +152,12 @@ def mostrar_grupos_duplicados(duplicados):
     
     # Mostrar el primer grupo
     mostrar_grupo(indice_grupo.get())
+    
+    # Hacer que el canvas sea responsivo
+    def ajustar_canvas(event):
+        mostrar_grupo(indice_grupo.get())
+    
+    canvas.bind("<Configure>", ajustar_canvas)
     
     # Iniciar el loop de la ventana
     ventana.mainloop()
