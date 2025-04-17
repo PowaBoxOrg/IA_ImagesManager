@@ -30,14 +30,14 @@ def mostrar_imagen(indice):
     except Exception as e:
         messagebox.showerror("Error", f"No se pudo cargar la imagen: {e}")
 
-def siguiente_imagen():
+def siguiente_imagen(event=None):
     """Muestra la siguiente imagen."""
     global indice_actual
     if indice_actual < len(imagenes) - 1:
         indice_actual += 1
         mostrar_imagen(indice_actual)
 
-def anterior_imagen():
+def anterior_imagen(event=None):
     """Muestra la imagen anterior."""
     global indice_actual
     if indice_actual > 0:
@@ -146,6 +146,13 @@ if __name__ == "__main__":
         fg="#ffffff"
     )
     lbl_contador.pack(side=tk.RIGHT, padx=10)
+
+    # Asociar las teclas de flecha, A, D y la tecla Intro a las funciones
+    ventana.bind("<Right>", siguiente_imagen)  # Flecha derecha para siguiente
+    ventana.bind("<Left>", anterior_imagen)   # Flecha izquierda para anterior
+    ventana.bind("d", siguiente_imagen)       # Tecla D para siguiente
+    ventana.bind("a", anterior_imagen)        # Tecla A para anterior
+    ventana.bind("<Return>", lambda event: copiar_imagen())  # Tecla Intro para copiar
 
     # Mostrar la primera imagen
     mostrar_imagen(indice_actual)
