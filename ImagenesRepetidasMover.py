@@ -5,8 +5,8 @@ import imagehash
 from collections import defaultdict
 
 # Rutas
-carpeta_fuente = r"C:\Users\M\Pictures\IA\THM"
-carpeta_destino = r"C:\Users\M\Pictures\IA\THMrep"
+carpeta_fuente = r"C:\Users\M\Desktop\AssetsTest\AssetsTest\Ability"
+carpeta_destino = r"C:\Users\M\Desktop\AssetsTest\AssetsTest"
 
 # Crear carpeta destino si no existe
 os.makedirs(carpeta_destino, exist_ok=True)

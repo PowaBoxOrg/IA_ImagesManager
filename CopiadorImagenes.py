@@ -92,9 +92,9 @@ def obtener_valor_numerico(nombre):
 
 if __name__ == "__main__":
     # Configuración
-    carpeta_a = r"C:\Users\M\Pictures\IA\THM\THMorg\F"  # Carpeta de origen
-    carpeta_b = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxD"  # Carpeta destino para imágenes >= 480p
-    carpeta_c = r"C:\Users\M\Pictures\IA\THM\THM Training Data\THM_ds_FluxF"  # Carpeta destino para imágenes < 480p
+    carpeta_a = r"C:\Users\M\Pictures\IA\AD"  # Carpeta de origen
+    carpeta_b = r"C:\Users\M\Pictures\IA\AD\Agrupadas"  # Carpeta destino para imágenes >= 480p
+    carpeta_c = r"C:\Users\M\Pictures\IA\AD\Agrupadas2"  # Carpeta destino para imágenes < 480p
 
     # Obtener lista de imágenes y ordenarlas numéricamente
     imagenes = [

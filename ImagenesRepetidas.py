@@ -199,7 +199,7 @@ def mostrar_grupos_duplicados(duplicados):
     ventana.mainloop()
 
 if __name__ == "__main__":
-    carpeta = r"C:\Users\M\Pictures\IA\THMFlux\B"  # Ruta fija
+    carpeta = r"C:\Users\M\Pictures\IA\AD"  # Ruta fija
     umbral = 15  # Umbral de similitud predeterminado
     
     duplicados = encontrar_imagenes_duplicadas(carpeta, umbral)
