@@ -60,7 +60,7 @@ def renombrar_por_fecha(directorio, prefijo, inicio=1):
 
 if __name__ == "__main__":
     # Configuración
-    carpeta = r"C:\Users\M\Pictures\IA\AD"  # Ruta fija
+    carpeta = r"C:\Users\M\Pictures\IA\Zzzimg\PNG\zirFlux"  # Ruta fija
     
     # Paso 1: Renombrar con nombres alfabéticos
     renombrar_por_alfabeto(carpeta)

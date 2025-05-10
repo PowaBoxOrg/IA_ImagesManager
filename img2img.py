@@ -28,5 +28,5 @@ def convert_folder_images_to_png(folder_path):
             convert_webp_to_png(input_path, output_path)
 
 # Ejemplo de uso:
-folder_path = r"C:\Users\M\Pictures\IA\ZzzAD\JPG"  # Ruta absoluta
+folder_path = r"C:\Users\M\Pictures\IA\Zzzimg\Zzzir"  # Ruta absoluta
 convert_folder_images_to_png(folder_path)
