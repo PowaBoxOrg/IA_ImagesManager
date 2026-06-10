@@ -41,13 +41,16 @@ def convert_folder_images_to_png(folder_path):
     converted = 0
     errors = []
 
+    output_dir = os.path.join(folder_path, "Convertidas_PNG")
+    os.makedirs(output_dir, exist_ok=True)
+
     for file_name in os.listdir(folder_path):
         input_path = os.path.join(folder_path, file_name)
         if not os.path.isfile(input_path):
             continue
 
         lower_name = file_name.lower()
-        output_path = os.path.splitext(input_path)[0] + ".png"
+        output_path = os.path.join(output_dir, os.path.splitext(file_name)[0] + ".png")
 
         if lower_name.endswith((".jpg", ".jpeg")):
             try:
@@ -124,7 +127,7 @@ def main():
 
         messagebox.showinfo(
             "Operacion completada",
-            f"Convertidos: {converted}",
+            f"Convertidos: {converted}\nGuardados en: Convertidas_PNG",
         )
 
     boton_examinar = tk.Button(frame, text="Examinar", command=seleccionar_carpeta)
