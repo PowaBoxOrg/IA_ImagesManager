@@ -61,6 +61,9 @@ def extraer_capturas(ruta_video: str, intervalo: float):
     if cv2 is None:
         raise RuntimeError(f"OpenCV (cv2) no disponible. Detalle: {_cv2_import_error}")
 
+    nombre_video = os.path.splitext(os.path.basename(ruta_video))[0]
+    sufijo_video = nombre_video[:5]
+
     video = cv2.VideoCapture(ruta_video)
     if not video.isOpened():
         raise RuntimeError("No se pudo abrir el video.")
@@ -84,7 +87,10 @@ def extraer_capturas(ruta_video: str, intervalo: float):
                 break
 
             total += 1
-            ruta_imagen = os.path.join(carpeta_salida, f"captura_{total:06d}.jpg")
+            ruta_imagen = os.path.join(
+                carpeta_salida,
+                f"captura_{total:06d}_{sufijo_video}.jpg",
+            )
             guardada = cv2.imwrite(
                 ruta_imagen,
                 imagen,

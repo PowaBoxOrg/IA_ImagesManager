@@ -1,5 +1,4 @@
-﻿import os
-import re
+import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
@@ -13,74 +12,152 @@ def generar_nombre_alfabetico(indice: int) -> str:
     return nombre
 
 
-def renombrar_por_alfabeto(directorio: str):
-    """Renombra archivos alfabeticamente de forma inteligente.
+def crear_ruta_temporal(directorio: str, indice: int, extension: str) -> str:
+    intento = 0
+    while True:
+        sufijo = f"{indice}" if intento == 0 else f"{indice}_{intento}"
+        nombre = f".__renombrador_alfabetico_tmp_{sufijo}{extension}"
+        ruta = os.path.join(directorio, nombre)
+        if not os.path.exists(ruta):
+            return ruta
+        intento += 1
 
-    Solo renombra si:
-    1) Hay archivos que no siguen el patron alfabetico (ej: 'a.jpg', 'b.png').
-    2) Hay un hueco en la secuencia alfabetica (ej: existe 'a.jpg' y 'c.jpg', pero no 'b.jpg').
+
+def archivos_en_secuencia(archivos: list[dict], varios_tipos: bool) -> bool:
+    grupos = {}
+    for archivo in archivos:
+        grupos.setdefault(archivo["tipo"], []).append(archivo)
+
+    for tipo, archivos_tipo in grupos.items():
+        etiqueta = tipo[1:] if tipo else "archivo"
+        nombres_actuales = {archivo["nombre"].lower() for archivo in archivos_tipo}
+        nombres_esperados = set()
+
+        for indice in range(len(archivos_tipo)):
+            nombre_alfabetico = generar_nombre_alfabetico(indice)
+            if varios_tipos:
+                base = f"{etiqueta}_{nombre_alfabetico}"
+            else:
+                base = nombre_alfabetico
+            nombres_esperados.add(f"{base}{tipo}")
+
+        if nombres_actuales != nombres_esperados:
+            return False
+
+    return True
+
+
+def renombrar_por_alfabeto(directorio: str):
+    """Renombra archivos con una secuencia alfabetica.
+
+    Si existe un solo formato, usa a.jpg, b.jpg, c.jpg...
+    Si existen varios, crea una secuencia independiente para cada formato:
+    jpg_a.jpg, jpg_b.jpg, png_a.png, png_b.png...
 
     Devuelve: (renamed_count, skipped)
     """
-    # 1) Clasificar archivos
-    archivos_alfabeticos = []
-    archivos_no_alfabeticos = []
+    archivos = []
+    for nombre in sorted(os.listdir(directorio), key=str.lower):
+        ruta = os.path.join(directorio, nombre)
+        if not os.path.isfile(ruta):
+            continue
 
-    patron_alfabetico = re.compile(r"^[a-z]+(\..+)$", re.IGNORECASE)
+        extension = os.path.splitext(nombre)[1]
+        archivos.append(
+            {
+                "nombre": nombre,
+                "ruta": ruta,
+                "extension": extension,
+                "tipo": extension.lower(),
+                "antiguedad": os.path.getmtime(ruta),
+            }
+        )
 
-    for f in os.listdir(directorio):
-        ruta = os.path.join(directorio, f)
-        if os.path.isfile(ruta):
-            if patron_alfabetico.match(f):
-                archivos_alfabeticos.append(f)
-            else:
-                archivos_no_alfabeticos.append(f)
+    tipos_archivo = {archivo["tipo"] for archivo in archivos}
+    varios_tipos = len(tipos_archivo) >= 2
 
-    # 2) Comprobar si hay huecos en la secuencia
-    archivos_alfabeticos.sort(key=lambda f: (len(os.path.splitext(f)[0]), os.path.splitext(f)[0].lower()))
-
-    hay_hueco = False
-    for i, nombre_archivo in enumerate(archivos_alfabeticos):
-        nombre_esperado_base = generar_nombre_alfabetico(i)
-        nombre_actual_base = os.path.splitext(nombre_archivo)[0].lower()
-        if nombre_actual_base != nombre_esperado_base:
-            hay_hueco = True
-            break
-
-    # 3) Decidir si renombrar
-    if not archivos_no_alfabeticos and not hay_hueco:
-        print("Todos los archivos ya estan correctamente nombrados y en secuencia. No se necesita hacer nada.")
+    if archivos_en_secuencia(archivos, varios_tipos):
+        print(
+            "Todos los archivos ya estan correctamente nombrados y en secuencia. "
+            "No se necesita hacer nada."
+        )
         return 0, True
 
-    if archivos_no_alfabeticos:
-        print(
-            f"Se encontraron {len(archivos_no_alfabeticos)} archivos que no siguen el patron alfabetico. "
-            "Se procedera a renombrar todo."
+    print("Los archivos no siguen la secuencia esperada. Se procedera a renombrar todo.")
+
+    if varios_tipos:
+        archivos.sort(
+            key=lambda archivo: (
+                archivo["tipo"],
+                archivo["antiguedad"],
+                archivo["nombre"].lower(),
+            )
         )
-    if hay_hueco:
-        print("Se detecto un hueco en la secuencia. Se procedera a renombrar todo.")
+    else:
+        archivos.sort(
+            key=lambda archivo: (
+                archivo["antiguedad"],
+                archivo["nombre"].lower(),
+            )
+        )
 
-    # 4) Renombrado completo: ordenar por antiguedad (mtime) y renombrar con temporales
-    todos_los_archivos = [f for f in os.listdir(directorio) if os.path.isfile(os.path.join(directorio, f))]
-    todos_los_archivos.sort(key=lambda f: os.path.getmtime(os.path.join(directorio, f)))
+    temporales = []
+    try:
+        for indice, archivo in enumerate(archivos):
+            ruta_temporal = crear_ruta_temporal(
+                directorio,
+                indice,
+                archivo["extension"],
+            )
+            os.rename(archivo["ruta"], ruta_temporal)
+            archivo["ruta_temporal"] = ruta_temporal
+            temporales.append(archivo)
+    except Exception:
+        for archivo in reversed(temporales):
+            if os.path.exists(archivo["ruta_temporal"]):
+                os.rename(archivo["ruta_temporal"], archivo["ruta"])
+        raise
 
-    # Renombrar a nombres temporales para evitar conflictos
-    for i, nombre_original in enumerate(todos_los_archivos):
-        ruta_original = os.path.join(directorio, nombre_original)
-        extension = os.path.splitext(nombre_original)[1]
-        nombre_temporal = f"__temp_{i}{extension}"
-        os.rename(ruta_original, os.path.join(directorio, nombre_temporal))
+    etiquetas_tipo = {}
+    for archivo in archivos:
+        if archivo["tipo"] not in etiquetas_tipo:
+            etiquetas_tipo[archivo["tipo"]] = (
+                archivo["extension"][1:] if archivo["extension"] else "archivo"
+            )
 
-    # Renombrar de temporal a final
-    for i in range(len(todos_los_archivos)):
-        extension = os.path.splitext(todos_los_archivos[i])[1]
-        ruta_temporal = os.path.join(directorio, f"__temp_{i}{extension}")
-        nuevo_nombre_final = generar_nombre_alfabetico(i) + extension
-        ruta_final = os.path.join(directorio, nuevo_nombre_final)
-        os.rename(ruta_temporal, ruta_final)
+    contadores = {tipo: 0 for tipo in tipos_archivo}
+    indice_general = 0
+
+    for archivo in archivos:
+        tipo = archivo["tipo"]
+        extension = archivo["extension"]
+
+        if varios_tipos:
+            indice = contadores[tipo]
+            base = f"{etiquetas_tipo[tipo]}_{generar_nombre_alfabetico(indice)}"
+        else:
+            indice = indice_general
+            base = generar_nombre_alfabetico(indice)
+
+        ruta_final = os.path.join(directorio, f"{base}{extension}")
+        while os.path.exists(ruta_final):
+            indice += 1
+            if varios_tipos:
+                base = f"{etiquetas_tipo[tipo]}_{generar_nombre_alfabetico(indice)}"
+            else:
+                base = generar_nombre_alfabetico(indice)
+            ruta_final = os.path.join(directorio, f"{base}{extension}")
+
+        nuevo_nombre_final = os.path.basename(ruta_final)
+        os.rename(archivo["ruta_temporal"], ruta_final)
         print(f'Renombrado a: "{nuevo_nombre_final}"')
 
-    return len(todos_los_archivos), False
+        if varios_tipos:
+            contadores[tipo] = indice + 1
+        else:
+            indice_general = indice + 1
+
+    return len(archivos), False
 
 
 def main():
