@@ -2,50 +2,43 @@
 Buscador y visor de imagenes duplicadas o visualmente similares.
 
 El script abre una interfaz grafica para seleccionar una carpeta y definir un
-umbral de similitud. Examina solamente los archivos de imagen ubicados
-directamente en esa carpeta; no recorre subcarpetas. Para cada imagen genera un
-hash perceptual pHash en escala de grises y lo compara con los grupos creados
-previamente.
+umbral de similitud (porcentaje). Examina solamente los archivos de imagen
+ubicados directamente en esa carpeta; no recorre subcarpetas.
 
-El umbral indica la distancia maxima permitida entre dos hashes:
+Para cada imagen genera una huella visual (miniatura 32x32 en escala de grises)
+y mide la similitud como porcentaje respecto a la diferencia maxima posible de
+pixeles (L1). Este metodo es adecuado para detectar conjuntos de imagenes
+provenientes de videos, donde hay muchas imagenes muy parecidas entre si
+(fotogramas consecutivos o cercanos).
 
-- 0 exige hashes perceptuales identicos.
-- Un valor mayor admite diferencias visuales progresivamente mas amplias.
+La similitud minima indica el parecido requerido:
 
-Cada imagen se agrega al primer grupo cuyo hash representativo se encuentre
-dentro del umbral. Despues se conservan solo los grupos que contienen al menos
-dos imagenes y cuyos valores numericos, extraidos de los nombres de archivo,
-tienen una diferencia mayor que RANGO_NUMERICO_MINIMO. Los nombres sin digitos
-reciben el valor cero para este filtro.
+- 100 exige miniaturas visualmente identicas.
+- Un valor menor (ej. 85) admite diferencias progresivas (cambios leves por
+  movimiento, compresion o interpolacion de video).
 
-Los resultados se muestran grupo por grupo en una ventana independiente. Las
-imagenes se distribuyen en una cuadricula adaptable, se reducen manteniendo
-completa su proporcion original y se recalculan cuando cambia el tamano de la
-ventana. Si un grupo no cabe verticalmente, puede recorrerse mediante la barra
-de desplazamiento o la rueda del raton. Los botones Anterior y Siguiente, asi
-como las teclas de flecha, permiten cambiar de grupo.
+Cada imagen se agrega al primer grupo cuyo representante este dentro del umbral
+de similitud. Despues se conservan solo los grupos que contienen al menos dos
+imagenes y cuyos valores numericos (del nombre de archivo) tienen diferencia
+mayor que RANGO_NUMERICO_MINIMO.
 
-La aplicacion es informativa: no elimina, mueve, renombra ni modifica las
-imagenes. Los archivos que no puedan abrirse se omiten y el error se imprime en
-el resumen final. El conteo y el calculo de hashes se ejecutan en segundo plano
-y por lotes configurables para mantener activa la interfaz con carpetas muy
-grandes. La busqueda de grupos similares usa un indice por distancia de Hamming
-en lugar de comparar cada imagen con todos los grupos existentes.
+Los resultados se muestran grupo por grupo en una ventana independiente con
+cuadricula adaptable. La aplicacion es informativa (no modifica archivos).
+
+El conteo y calculo de huellas se ejecutan en segundo plano por lotes. Se usa un
+indice por distancia visual para evitar comparar contra todos los grupos.
 
 Dependencias:
 
 - Python con Tkinter para la interfaz grafica.
 - Pillow (PIL) para abrir y mostrar las imagenes.
-- imagehash para calcular y comparar los hashes perceptuales.
 
 Si se inicia desde un entorno virtual donde falte alguna dependencia, el script
 intenta relanzarse con el Python global asociado a ese entorno.
 
-Formatos contemplados: PNG, JPG, JPEG, WEBP, BMP, GIF, TIF, TIFF y AVIF. La
-compatibilidad efectiva depende de los formatos habilitados en Pillow.
+Formatos contemplados: PNG, JPG, JPEG, WEBP, BMP, GIF, TIF, TIFF y AVIF.
 """
 
-import importlib
 import os
 import queue
 import subprocess
@@ -64,7 +57,7 @@ _error_relanzamiento = ""
 def relanzar_con_python_global() -> bool:
     global _error_relanzamiento
 
-    if Image is not None and imagehash is not None:
+    if Image is not None:
         return False
     if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
         return False
@@ -91,12 +84,6 @@ def relanzar_con_python_global() -> bool:
 
 
 try:
-    imagehash = importlib.import_module("imagehash")
-except Exception as exc:  # pragma: no cover
-    imagehash = None
-    _imagehash_import_error = str(exc)
-
-try:
     from PIL import Image, ImageOps, ImageTk
 except Exception as exc:  # pragma: no cover
     Image = None
@@ -112,37 +99,45 @@ ALTO_MINIATURA_MAXIMO = 360
 TAMANO_LOTE_PREDETERMINADO = 100
 MAX_ERRORES_DETALLE = 100
 
+# Huella visual + similitud en porcentaje (sin dependencia imagehash)
+TAMANO_HUELLA_VISUAL = (32, 32)
+SIMILITUD_MINIMA_PREDETERMINADA = 85
+PIXEL_MAXIMO = 255
+DISTANCIA_VISUAL_MAXIMA = (
+    TAMANO_HUELLA_VISUAL[0] * TAMANO_HUELLA_VISUAL[1] * PIXEL_MAXIMO
+)
+
 CallbackEvento = Callable[[str, dict], None]
 CallbackCancelacion = Callable[[], bool]
 
 
-class NodoHash:
-    def __init__(self, hash_imagen, orden: int):
-        self.hash_imagen = hash_imagen
+class NodoHuella:
+    def __init__(self, huella: bytes, orden: int):
+        self.huella = huella
         self.orden = orden
-        self.hijos: dict[int, "NodoHash"] = {}
+        self.hijos: dict[int, "NodoHuella"] = {}
 
 
-class IndiceHashes:
+class IndiceHuellas:
     def __init__(self):
-        self.raiz: NodoHash | None = None
+        self.raiz: NodoHuella | None = None
 
-    def agregar(self, hash_imagen, orden: int):
-        nuevo = NodoHash(hash_imagen, orden)
+    def agregar(self, huella: bytes, orden: int):
+        nuevo = NodoHuella(huella, orden)
         if self.raiz is None:
             self.raiz = nuevo
             return
 
         actual = self.raiz
         while True:
-            distancia = hash_imagen - actual.hash_imagen
+            distancia = calcular_distancia_visual(huella, actual.huella)
             hijo = actual.hijos.get(distancia)
             if hijo is None:
                 actual.hijos[distancia] = nuevo
                 return
             actual = hijo
 
-    def buscar(self, hash_imagen, distancia_maxima: int) -> NodoHash | None:
+    def buscar(self, huella: bytes, distancia_maxima: int) -> NodoHuella | None:
         if self.raiz is None:
             return None
 
@@ -150,7 +145,7 @@ class IndiceHashes:
         pendientes = [self.raiz]
         while pendientes:
             actual = pendientes.pop()
-            distancia = hash_imagen - actual.hash_imagen
+            distancia = calcular_distancia_visual(huella, actual.huella)
             if distancia <= distancia_maxima and (
                 mejor is None or actual.orden < mejor.orden
             ):
@@ -171,6 +166,34 @@ def obtener_valor_numerico(nombre: str) -> int:
     """Extrae el valor numerico del nombre del archivo."""
     partes = "".join(filter(str.isdigit, nombre))
     return int(partes) if partes.isdigit() else 0
+
+
+def crear_huella_visual(imagen) -> bytes:
+    """Genera huella visual compacta: miniatura gris 32x32 como bytes."""
+    remuestreo = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
+    miniatura = imagen.convert("L").resize(TAMANO_HUELLA_VISUAL, remuestreo)
+    return miniatura.tobytes()
+
+
+def calcular_distancia_visual(huella_a: bytes, huella_b: bytes) -> int:
+    """Suma de diferencias absolutas por pixel (0 .. DISTANCIA_VISUAL_MAXIMA)."""
+    return sum(abs(a - b) for a, b in zip(huella_a, huella_b))
+
+
+def similitud_a_distancia_maxima(similitud_min: int) -> int:
+    """Convierte % similitud minima en distancia maxima permitida."""
+    if similitud_min >= 100:
+        return 0
+    if similitud_min <= 0:
+        return DISTANCIA_VISUAL_MAXIMA
+    diff_max = 100 - similitud_min
+    return round((diff_max / 100) * DISTANCIA_VISUAL_MAXIMA)
+
+
+def distancia_visual_a_similitud(distancia: int) -> float:
+    if DISTANCIA_VISUAL_MAXIMA == 0:
+        return 0.0
+    return 100.0 - (distancia / DISTANCIA_VISUAL_MAXIMA * 100)
 
 
 def calcular_distribucion_visor(
@@ -274,15 +297,13 @@ def contar_imagenes(
 
 def procesar_imagenes_duplicadas(
     carpeta: str,
-    umbral_similitud: int = 5,
+    similitud_minima: int = SIMILITUD_MINIMA_PREDETERMINADA,
     tamano_lote: int = TAMANO_LOTE_PREDETERMINADO,
     al_evento: CallbackEvento | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
 ):
     if Image is None:
         raise RuntimeError(f"No se pudo importar Pillow (PIL). Detalle: {_pil_import_error}")
-    if imagehash is None:
-        raise RuntimeError(f"No se pudo importar imagehash. Detalle: {_imagehash_import_error}")
 
     total, cancelado = contar_imagenes(
         carpeta,
@@ -302,12 +323,14 @@ def procesar_imagenes_duplicadas(
     if cancelado or total == 0:
         return resultado
 
-    hash_imagenes: dict[object, list[str]] = defaultdict(list)
-    indice_hashes = IndiceHashes()
+    huellas_por_grupo: dict[bytes, list[str]] = defaultdict(list)
+    indice = IndiceHuellas()
     procesadas = 0
     total_errores = 0
     errores: list[tuple[str, str]] = []
     cancelado = False
+
+    distancia_maxima = similitud_a_distancia_maxima(similitud_minima)
 
     for lote in iterar_lotes(iterar_imagenes(carpeta), tamano_lote):
         ultima_ruta = lote[-1]
@@ -319,17 +342,14 @@ def procesar_imagenes_duplicadas(
             procesadas += 1
             try:
                 with Image.open(ruta_archivo) as img:
-                    hash_img = imagehash.phash(img.convert("L"))
+                    huella = crear_huella_visual(img)
 
-                coincidencia = indice_hashes.buscar(
-                    hash_img,
-                    umbral_similitud,
-                )
+                coincidencia = indice.buscar(huella, distancia_maxima)
                 if coincidencia is None:
-                    indice_hashes.agregar(hash_img, len(hash_imagenes))
-                    hash_imagenes[hash_img].append(ruta_archivo)
+                    indice.agregar(huella, len(huellas_por_grupo))
+                    huellas_por_grupo[huella].append(ruta_archivo)
                 else:
-                    hash_imagenes[coincidencia.hash_imagen].append(ruta_archivo)
+                    huellas_por_grupo[coincidencia.huella].append(ruta_archivo)
             except Exception as exc:
                 total_errores += 1
                 if len(errores) < MAX_ERRORES_DETALLE:
@@ -337,20 +357,20 @@ def procesar_imagenes_duplicadas(
 
         if al_evento is not None:
             al_evento(
-                "hash",
+                "huella",
                 {
                     "processed": procesadas,
                     "total": total,
-                    "groups": len(hash_imagenes),
+                    "groups": len(huellas_por_grupo),
                     "path": ultima_ruta,
                 },
             )
         if cancelado:
             break
 
-    duplicados_filtrados: dict[object, list[str]] = {}
+    duplicados_filtrados: dict[bytes, list[str]] = {}
     if not cancelado:
-        for hash_img, rutas in hash_imagenes.items():
+        for huella, rutas in huellas_por_grupo.items():
             if len(rutas) <= 1:
                 continue
 
@@ -359,12 +379,12 @@ def procesar_imagenes_duplicadas(
                 for ruta in rutas
             ]
             if max(valores) - min(valores) > RANGO_NUMERICO_MINIMO:
-                duplicados_filtrados[hash_img] = rutas
+                duplicados_filtrados[huella] = rutas
 
     resultado.update(
         duplicates=duplicados_filtrados,
         processed=procesadas,
-        groups_before_filter=len(hash_imagenes),
+        groups_before_filter=len(huellas_por_grupo),
         errors=errores,
         error_count=total_errores,
         cancelled=cancelado,
@@ -374,20 +394,31 @@ def procesar_imagenes_duplicadas(
 
 def encontrar_imagenes_duplicadas(
     carpeta: str,
-    umbral_similitud: int = 5,
+    similitud_minima: int = SIMILITUD_MINIMA_PREDETERMINADA,
     tamano_lote: int = TAMANO_LOTE_PREDETERMINADO,
 ):
     """API compatible que devuelve solamente los grupos encontrados."""
     resultado = procesar_imagenes_duplicadas(
         carpeta,
-        umbral_similitud,
+        similitud_minima,
         tamano_lote=tamano_lote,
     )
     return resultado["duplicates"]
 
 
 def mostrar_grupos_duplicados(duplicados: dict):
-    """Muestra los grupos en una cuadricula adaptable con desplazamiento."""
+    """Muestra los grupos en una cuadricula adaptable con desplazamiento.
+
+    Soporta selección de imágenes:
+    - Cada tarjeta tiene un checkbox "Mantener".
+    - Por defecto solo la primera imagen del grupo está marcada.
+    - Botones rápidos para cambiar la selección.
+    - "Eliminar las NO seleccionadas de este grupo" borra del disco las imágenes
+      no marcadas (debe quedar al menos una).
+    - Botón "Eliminar TODO el grupo" permite borrar todas las imágenes del grupo
+      actual (útil cuando todo el conjunto es indeseado).
+    - Útil para limpiar conjuntos de fotogramas muy parecidos de video.
+    """
     if Image is None or ImageOps is None or ImageTk is None:
         raise RuntimeError(f"No se pudo importar Pillow (PIL). Detalle: {_pil_import_error}")
 
@@ -397,12 +428,16 @@ def mostrar_grupos_duplicados(duplicados: dict):
     ventana.minsize(620, 420)
     ventana.configure(bg="#2e2e2e")
     ventana.rowconfigure(1, weight=1)
+    ventana.rowconfigure(3, weight=0)
     ventana.columnconfigure(0, weight=1)
 
     grupos = list(duplicados.items())
-    total_grupos = len(grupos)
+    total_grupos_var = tk.IntVar(value=len(grupos))
     indice_grupo = tk.IntVar(value=0)
     referencias_imagenes: list[ImageTk.PhotoImage] = []
+
+    # Estado de selección por ruta (se mantiene entre re-renders del mismo grupo)
+    selecciones: dict[str, tk.BooleanVar] = {}
 
     cabecera_var = tk.StringVar()
     tk.Label(
@@ -450,6 +485,172 @@ def mostrar_grupos_duplicados(duplicados: dict):
         canvas.configure(scrollregion=canvas.bbox(ventana_canvas))
         canvas.yview_moveto(posicion)
 
+    def reset_selecciones(rutas: list[str]):
+        """Inicializa selecciones para un grupo nuevo: por defecto solo la primera."""
+        selecciones.clear()
+        for i, ruta in enumerate(rutas):
+            selecciones[ruta] = tk.BooleanVar(value=(i == 0))
+
+    def seleccionar_solo_primera():
+        idx = indice_grupo.get()
+        if idx >= len(grupos):
+            return
+        rutas = grupos[idx][1]
+        for i, ruta in enumerate(rutas):
+            if ruta in selecciones:
+                selecciones[ruta].set(i == 0)
+
+    def seleccionar_todas():
+        for var in selecciones.values():
+            var.set(True)
+
+    def seleccionar_ninguna():
+        for var in selecciones.values():
+            var.set(False)
+
+    def invertir_seleccion():
+        for var in selecciones.values():
+            var.set(not var.get())
+
+    def eliminar_no_seleccionadas():
+        """Elimina del disco las imágenes del grupo actual que NO estén seleccionadas para mantener."""
+        idx = indice_grupo.get()
+        if idx >= len(grupos):
+            return
+        key, rutas = grupos[idx]
+        if len(rutas) <= 1:
+            messagebox.showinfo("Información", "El grupo tiene una sola imagen. Nada que eliminar.")
+            return
+
+        a_mantener = [r for r in rutas if r in selecciones and selecciones[r].get()]
+        a_eliminar = [r for r in rutas if not (r in selecciones and selecciones[r].get())]
+
+        if not a_eliminar:
+            messagebox.showinfo("Nada que eliminar", "Todas las imágenes están marcadas para mantener.")
+            return
+        if not a_mantener:
+            messagebox.showwarning("Acción inválida", "Debes mantener al menos una imagen del grupo.")
+            return
+
+        # Confirmación con preview
+        preview = "\n".join(f"  • {os.path.basename(p)}" for p in a_eliminar[:10])
+        if len(a_eliminar) > 10:
+            preview += f"\n  ... (+{len(a_eliminar) - 10} más)"
+        msg = (f"¿Eliminar {len(a_eliminar)} imagen(es) del grupo actual?\n\n"
+               f"Se mantendrán: {len(a_mantener)}\n\n"
+               f"Archivos que se BORRARÁN:\n{preview}\n\n"
+               "Esta acción es PERMANENTE.")
+        if not messagebox.askyesno("Confirmar eliminación", msg, icon="warning"):
+            return
+
+        eliminados = 0
+        errores: list[str] = []
+        for ruta in a_eliminar:
+            try:
+                if os.path.isfile(ruta):
+                    os.remove(ruta)
+                eliminados += 1
+            except Exception as exc:
+                errores.append(f"{os.path.basename(ruta)}: {exc}")
+
+        # Actualizar la lista del grupo (muta la original)
+        rutas[:] = a_mantener
+        # Limpiar selecciones obsoletas y mantener solo las que quedan
+        selecciones.clear()
+        for i, ruta in enumerate(rutas):
+            selecciones[ruta] = tk.BooleanVar(value=True)  # ya fueron las seleccionadas
+
+        if len(rutas) <= 1:
+            # Quitar el grupo del visor (ya no califica como duplicado)
+            grupos.pop(idx)
+            total_grupos_var.set(len(grupos))
+            if not grupos:
+                messagebox.showinfo(
+                    "Grupos limpiados",
+                    f"Se eliminaron {eliminados} imágenes.\nNo quedan grupos con múltiples imágenes."
+                )
+                ventana.destroy()
+                return
+            nuevo_idx = min(idx, len(grupos) - 1)
+            mostrar_grupo(nuevo_idx)
+            return
+
+        # Refrescar el grupo actual
+        actualizar_navegacion()
+        renderizar_grupo(reiniciar_desplazamiento=True)
+
+        if errores:
+            detalle = "\n".join(errores[:5])
+            messagebox.showwarning(
+                "Eliminación parcial",
+                f"Se eliminaron {eliminados} imágenes.\nErrores:\n{detalle}"
+            )
+        else:
+            messagebox.showinfo("Eliminación completada", f"Se eliminaron {eliminados} imágenes.")
+
+    def eliminar_grupo_completo():
+        """Elimina TODAS las imágenes del grupo actual del disco y quita el grupo del visor."""
+        idx = indice_grupo.get()
+        if idx >= len(grupos):
+            return
+        _, rutas = grupos[idx]
+        if not rutas:
+            grupos.pop(idx)
+            total_grupos_var.set(len(grupos))
+            selecciones.clear()
+            if not grupos:
+                ventana.destroy()
+                return
+            mostrar_grupo(min(idx, len(grupos) - 1))
+            return
+
+        preview = "\n".join(f"  • {os.path.basename(p)}" for p in rutas[:10])
+        if len(rutas) > 10:
+            preview += f"\n  ... (+{len(rutas) - 10} más)"
+
+        msg = (
+            f"⚠️ ¿ELIMINAR **TODAS** las {len(rutas)} imágenes de este grupo?\n\n"
+            f"Archivos que se borrarán:\n{preview}\n\n"
+            "Esta acción es PERMANENTE. Se eliminará el grupo completo."
+        )
+        if not messagebox.askyesno("Eliminar TODO el grupo", msg, icon="warning"):
+            return
+
+        eliminados = 0
+        errores: list[str] = []
+        for ruta in list(rutas):
+            try:
+                if os.path.isfile(ruta):
+                    os.remove(ruta)
+                eliminados += 1
+            except Exception as exc:
+                errores.append(f"{os.path.basename(ruta)}: {exc}")
+
+        # Quitar el grupo del visor
+        grupos.pop(idx)
+        total_grupos_var.set(len(grupos))
+        selecciones.clear()
+
+        if not grupos:
+            messagebox.showinfo(
+                "Grupo eliminado",
+                f"Se eliminaron {eliminados} imágenes.\nNo quedan más grupos."
+            )
+            ventana.destroy()
+            return
+
+        nuevo_idx = min(idx, len(grupos) - 1)
+        mostrar_grupo(nuevo_idx)
+
+        if errores:
+            detalle = "\n".join(errores[:5])
+            messagebox.showwarning(
+                "Eliminación parcial",
+                f"Se eliminaron {eliminados} imágenes.\nAlgunos errores:\n{detalle}"
+            )
+        else:
+            messagebox.showinfo("Grupo eliminado", f"Se eliminaron las {eliminados} imágenes del grupo.")
+
     def renderizar_grupo(reiniciar_desplazamiento: bool = False):
         nonlocal columnas_configuradas
         posicion = 0.0 if reiniciar_desplazamiento else canvas.yview()[0]
@@ -458,7 +659,10 @@ def mostrar_grupos_duplicados(duplicados: dict):
             widget.destroy()
         referencias_imagenes.clear()
 
-        _, rutas = grupos[indice_grupo.get()]
+        idx_actual = indice_grupo.get()
+        if idx_actual >= len(grupos):
+            return
+        _, rutas = grupos[idx_actual]
         columnas, ancho_tarjeta, alto_miniatura = calcular_distribucion_visor(
             canvas.winfo_width(),
             canvas.winfo_height(),
@@ -524,8 +728,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     fg="#ffffff",
                     justify="center",
                     wraplength=max(180, ancho_tarjeta - 30),
-                    pady=(8, 2),
-                ).pack(fill="x")
+                ).pack(fill="x", pady=(8, 2))
 
                 fecha_creacion = datetime.fromtimestamp(os.path.getctime(ruta)).strftime("%Y-%m-%d %H:%M:%S")
                 tk.Label(
@@ -539,6 +742,25 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     fg="#d6d6d6",
                     justify="center",
                 ).pack(fill="x")
+
+                # Checkbox de selección "Mantener"
+                var = selecciones.get(ruta)
+                if var is None:
+                    # fallback (no debería pasar si reset_selecciones se llamó)
+                    var = tk.BooleanVar(value=(indice_imagen == 0))
+                    selecciones[ruta] = var
+                chk = tk.Checkbutton(
+                    tarjeta,
+                    text="Mantener",
+                    variable=var,
+                    bg="#3a3a3a",
+                    fg="#88ff88",
+                    selectcolor="#1f1f1f",
+                    activebackground="#3a3a3a",
+                    activeforeground="#ffffff",
+                    font=("Arial", 9, "bold"),
+                )
+                chk.pack(fill="x", pady=(4, 0))
 
             except Exception as exc:
                 tk.Label(
@@ -554,23 +776,29 @@ def mostrar_grupos_duplicados(duplicados: dict):
 
     def actualizar_navegacion():
         indice = indice_grupo.get()
-        hash_img, rutas = grupos[indice]
+        if indice >= len(grupos):
+            return
+        _, rutas = grupos[indice]
+        total = total_grupos_var.get()
         cabecera_var.set(
-            f"Grupo {indice + 1} de {total_grupos} | "
-            f"{len(rutas)} imagen(es) | Hash: {hash_img}"
+            f"Grupo {indice + 1} de {total} | "
+            f"{len(rutas)} imagen(es)"
         )
         btn_anterior.config(state="normal" if indice > 0 else "disabled")
         btn_siguiente.config(
-            state="normal" if indice < total_grupos - 1 else "disabled"
+            state="normal" if indice < total - 1 else "disabled"
         )
 
     def mostrar_grupo(indice: int):
         indice_grupo.set(indice)
+        _, rutas = grupos[indice]
+        reset_selecciones(rutas)
         actualizar_navegacion()
         renderizar_grupo(reiniciar_desplazamiento=True)
 
     def siguiente_grupo():
-        if indice_grupo.get() < total_grupos - 1:
+        total = total_grupos_var.get()
+        if indice_grupo.get() < total - 1:
             mostrar_grupo(indice_grupo.get() + 1)
 
     def anterior_grupo():
@@ -602,6 +830,76 @@ def mostrar_grupos_duplicados(duplicados: dict):
     )
     btn_siguiente.grid(row=0, column=2, padx=10, pady=10, sticky="e")
 
+    # === Barra de acciones de selección y eliminación ===
+    frame_seleccion = tk.Frame(ventana, bg="#2e2e2e")
+    frame_seleccion.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 8))
+
+    tk.Button(
+        frame_seleccion,
+        text="Solo primera",
+        command=seleccionar_solo_primera,
+        bg="#2f4f2f",
+        fg="#ddffdd",
+        width=14,
+    ).grid(row=0, column=0, padx=3, pady=2)
+
+    tk.Button(
+        frame_seleccion,
+        text="Todas",
+        command=seleccionar_todas,
+        bg="#2f4f2f",
+        fg="#ddffdd",
+        width=10,
+    ).grid(row=0, column=1, padx=3, pady=2)
+
+    tk.Button(
+        frame_seleccion,
+        text="Ninguna",
+        command=seleccionar_ninguna,
+        bg="#4f2f2f",
+        fg="#ffdddd",
+        width=10,
+    ).grid(row=0, column=2, padx=3, pady=2)
+
+    tk.Button(
+        frame_seleccion,
+        text="Invertir",
+        command=invertir_seleccion,
+        bg="#3a3a3a",
+        fg="#ffffff",
+        width=10,
+    ).grid(row=0, column=3, padx=3, pady=2)
+
+    btn_eliminar = tk.Button(
+        frame_seleccion,
+        text="🗑 Eliminar las NO seleccionadas de este grupo",
+        command=eliminar_no_seleccionadas,
+        bg="#662222",
+        fg="#ffcccc",
+        font=("Arial", 9, "bold"),
+        width=36,
+    )
+    btn_eliminar.grid(row=0, column=4, padx=(10, 3), pady=2)
+
+    btn_eliminar_todo = tk.Button(
+        frame_seleccion,
+        text="🗑 Eliminar TODO el grupo",
+        command=eliminar_grupo_completo,
+        bg="#8B0000",
+        fg="#ffffff",
+        font=("Arial", 9, "bold"),
+        width=22,
+    )
+    btn_eliminar_todo.grid(row=0, column=5, padx=(3, 4), pady=2)
+
+    tk.Label(
+        frame_seleccion,
+        text="Marca las que quieres conservar y usa «Eliminar las NO seleccionadas», o pulsa «Eliminar TODO el grupo» para borrar todas las del grupo actual.",
+        bg="#2e2e2e",
+        fg="#ffaaaa",
+        font=("Arial", 8),
+    ).grid(row=1, column=0, columnspan=6, sticky="w", padx=4, pady=(2, 0))
+
     resize_after_id = None
 
     def ajustar_canvas(event):
@@ -628,6 +926,10 @@ def mostrar_grupos_duplicados(duplicados: dict):
     ventana.bind("<MouseWheel>", desplazar_rueda)
     ventana.bind("<Left>", lambda _event: anterior_grupo())
     ventana.bind("<Right>", lambda _event: siguiente_grupo())
+    ventana.bind("<Delete>", lambda _event: eliminar_no_seleccionadas())
+    ventana.bind("<d>", lambda _event: eliminar_no_seleccionadas())
+    ventana.bind("<Shift-Delete>", lambda _event: eliminar_grupo_completo())
+    ventana.bind("<Control-Delete>", lambda _event: eliminar_grupo_completo())
     ventana.after_idle(mostrar_grupo, 0)
 
 
@@ -658,8 +960,8 @@ def main():
     )
     boton_examinar.grid(row=1, column=2, pady=(4, 8))
 
-    tk.Label(frame, text="Umbral (0=identicas):").grid(row=2, column=0, sticky="w")
-    umbral_var = tk.StringVar(value="15")
+    tk.Label(frame, text="Similitud mínima (%):").grid(row=2, column=0, sticky="w")
+    umbral_var = tk.StringVar(value=str(SIMILITUD_MINIMA_PREDETERMINADA))
     umbral_entry = tk.Entry(frame, textvariable=umbral_var, width=12)
     umbral_entry.grid(row=3, column=0, pady=(4, 8), sticky="w")
 
@@ -681,9 +983,10 @@ def main():
     tk.Label(
         frame,
         text=(
-            "Procesa en segundo plano y actualiza el progreso al terminar cada "
-            f"lote. Solo muestra grupos con rango numerico > "
-            f"{RANGO_NUMERICO_MINIMO} en el nombre."
+            "Usa porcentaje de similitud (huella visual 32x32 gris). "
+            "Valores altos (ej 90-98) detectan fotogramas muy parecidos de video. "
+            f"Procesa por lotes. Solo muestra grupos con rango numerico > {RANGO_NUMERICO_MINIMO}. "
+            "En el visor podrás seleccionar qué imágenes mantener y eliminar el resto del grupo."
         ),
         justify="left",
         wraplength=520,
@@ -757,11 +1060,14 @@ def main():
             return
 
         try:
-            umbral = int(umbral_var.get().strip())
-            if umbral < 0:
+            similitud = int(umbral_var.get().strip())
+            if not 0 <= similitud <= 100:
                 raise ValueError()
         except Exception:
-            messagebox.showerror("Dato invalido", "El umbral debe ser un entero >= 0.")
+            messagebox.showerror(
+                "Dato invalido",
+                "La similitud minima debe ser un entero entre 0 y 100.",
+            )
             return
 
         try:
@@ -788,7 +1094,7 @@ def main():
             try:
                 resultado = procesar_imagenes_duplicadas(
                     carpeta,
-                    umbral,
+                    similitud,
                     tamano_lote=tamano_lote,
                     al_evento=lambda tipo, datos: mensajes.put(
                         ("evento", (tipo, datos))
@@ -807,7 +1113,7 @@ def main():
                 f"Archivos revisados: {datos['archivos_revisados']} | "
                 f"Imagenes encontradas: {datos['imagenes']}"
             )
-        elif tipo == "hash":
+        elif tipo == "huella":
             poner_barra_determinada()
             total = datos["total"]
             progreso_var.set(

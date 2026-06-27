@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -32,6 +33,11 @@ NOMBRES_RESERVADOS_WINDOWS = {
     *(f"COM{indice}" for indice in range(1, 10)),
     *(f"LPT{indice}" for indice in range(1, 10)),
 }
+NOMBRE_CARPETA_DESTINO = "0_IMAGENES_EXTRAIDAS"
+PATRON_CARPETA_CAPTURAS = re.compile(r"^(\d+)_capturas$", re.IGNORECASE)
+PATRON_PREFIJO_CAPTURA = re.compile(r"^\d+_(captura(?:[_ -].*)?)$", re.IGNORECASE)
+NUMERO_MINIMO_CARPETA = 1
+NUMERO_MAXIMO_CARPETA = 1999
 LIMITE_INCIDENCIAS = 15
 
 CallbackProgreso = Callable[[int, int, str], None]
@@ -42,11 +48,19 @@ CallbackCancelacion = Callable[[], bool]
 class ArchivoZip:
     ruta: str
     imagenes: int
+    prefijo: str | None = None
+
+
+@dataclass
+class ImagenOrigen:
+    ruta: str
+    nombre_destino: str
+    prefijo_aplicado: bool = False
 
 
 @dataclass
 class Trabajo:
-    imagenes: list[str] = field(default_factory=list)
+    imagenes: list[ImagenOrigen] = field(default_factory=list)
     archivos_zip: list[ArchivoZip] = field(default_factory=list)
 
     @property
@@ -62,6 +76,7 @@ class Resultado:
     imagenes_en_zip: int = 0
     imagenes_movidas: int = 0
     imagenes_extraidas: int = 0
+    prefijos_aplicados: int = 0
     nombres_ajustados: int = 0
     errores: int = 0
     cancelado: bool = False
@@ -75,6 +90,62 @@ class Resultado:
 
 def es_imagen(nombre: str) -> bool:
     return os.path.splitext(nombre)[1].lower() in EXTENSIONES_IMAGEN
+
+
+def obtener_prefijo_carpeta(nombre_carpeta: str) -> str | None:
+    coincidencia = PATRON_CARPETA_CAPTURAS.fullmatch(nombre_carpeta)
+    if not coincidencia:
+        return None
+
+    numero = int(coincidencia.group(1))
+    if not NUMERO_MINIMO_CARPETA <= numero <= NUMERO_MAXIMO_CARPETA:
+        return None
+
+    return str(numero)
+
+
+def obtener_prefijo_directorio(carpeta_raiz: str, directorio: str) -> str | None:
+    carpeta_raiz = os.path.abspath(carpeta_raiz)
+    directorio = os.path.abspath(directorio)
+
+    while not rutas_iguales(directorio, carpeta_raiz):
+        prefijo = obtener_prefijo_carpeta(os.path.basename(directorio))
+        if prefijo is not None:
+            return prefijo
+
+        padre = os.path.dirname(directorio)
+        if rutas_iguales(padre, directorio):
+            break
+        directorio = padre
+
+    return None
+
+
+def obtener_prefijo_miembro_zip(info: zipfile.ZipInfo) -> str | None:
+    partes = info.filename.replace("\\", "/").split("/")[:-1]
+    for nombre_carpeta in reversed(partes):
+        prefijo = obtener_prefijo_carpeta(nombre_carpeta)
+        if prefijo is not None:
+            return prefijo
+    return None
+
+
+def crear_nombre_destino_con_prefijo(
+    nombre_archivo: str,
+    prefijo: str | None,
+) -> tuple[str, bool]:
+    if not prefijo:
+        return nombre_archivo, False
+
+    prefijo_esperado = f"{prefijo}_"
+    if nombre_archivo.startswith(prefijo_esperado):
+        return nombre_archivo, False
+
+    coincidencia = PATRON_PREFIJO_CAPTURA.fullmatch(nombre_archivo)
+    if coincidencia:
+        return f"{prefijo}_{coincidencia.group(1)}", True
+
+    return f"{prefijo}_{nombre_archivo}", True
 
 
 def es_miembro_regular(info: zipfile.ZipInfo) -> bool:
@@ -133,6 +204,21 @@ def ruta_dentro_de(ruta: str, carpeta: str) -> bool:
         return False
 
 
+def resolver_carpeta_destino(
+    carpeta_raiz: str,
+    carpeta_seleccionada: str = "",
+) -> str:
+    base = os.path.abspath(carpeta_seleccionada or carpeta_raiz)
+    if os.path.basename(base).casefold() == NOMBRE_CARPETA_DESTINO.casefold():
+        destino = base
+    else:
+        destino = os.path.join(base, NOMBRE_CARPETA_DESTINO)
+
+    if carpeta_raiz and rutas_iguales(destino, carpeta_raiz):
+        raise ValueError("La carpeta destino no puede ser la misma que la carpeta revisada.")
+    return destino
+
+
 def explorar(
     carpeta_raiz: str,
     resultado: Resultado,
@@ -175,6 +261,7 @@ def explorar(
         subcarpetas.sort(key=str.lower)
         archivos.sort(key=str.lower)
         resultado.carpetas_revisadas += 1
+        prefijo_directorio = obtener_prefijo_directorio(carpeta_raiz, directorio)
 
         for nombre in archivos:
             ruta = os.path.join(directorio, nombre)
@@ -182,7 +269,13 @@ def explorar(
                 continue
 
             if directorio != carpeta_raiz and es_imagen(nombre):
-                trabajo.imagenes.append(ruta)
+                nombre_destino, prefijo_aplicado = crear_nombre_destino_con_prefijo(
+                    nombre,
+                    prefijo_directorio,
+                )
+                trabajo.imagenes.append(
+                    ImagenOrigen(ruta, nombre_destino, prefijo_aplicado)
+                )
                 continue
 
             if os.path.splitext(nombre)[1].lower() != ".zip":
@@ -193,7 +286,9 @@ def explorar(
                     cantidad = sum(
                         1 for info in archivo_zip.infolist() if es_imagen_zip(info)
                     )
-                trabajo.archivos_zip.append(ArchivoZip(ruta, cantidad))
+                trabajo.archivos_zip.append(
+                    ArchivoZip(ruta, cantidad, prefijo_directorio)
+                )
             except (OSError, zipfile.BadZipFile, zipfile.LargeZipFile) as exc:
                 resultado.agregar_error(f"ZIP no legible {ruta}: {exc}")
 
@@ -207,7 +302,7 @@ def explorar(
                 f"Explorando: {directorio}",
             )
 
-    trabajo.imagenes.sort(key=str.lower)
+    trabajo.imagenes.sort(key=lambda imagen: imagen.ruta.lower())
     trabajo.archivos_zip.sort(key=lambda archivo: archivo.ruta.lower())
     resultado.imagenes_en_subcarpetas = len(trabajo.imagenes)
     resultado.archivos_zip = len(trabajo.archivos_zip)
@@ -218,20 +313,24 @@ def explorar(
 
 
 def mover_imagen(
-    ruta_origen: str,
+    imagen: ImagenOrigen,
     carpeta_destino: str,
     resultado: Resultado,
 ):
-    nombre = os.path.basename(ruta_origen)
-    ruta_destino, ajustado = ruta_disponible(carpeta_destino, nombre)
+    ruta_destino, ajustado = ruta_disponible(
+        carpeta_destino,
+        imagen.nombre_destino,
+    )
 
     try:
-        shutil.move(ruta_origen, ruta_destino)
+        shutil.move(imagen.ruta, ruta_destino)
         resultado.imagenes_movidas += 1
+        if imagen.prefijo_aplicado:
+            resultado.prefijos_aplicados += 1
         if ajustado:
             resultado.nombres_ajustados += 1
     except (OSError, shutil.Error) as exc:
-        resultado.agregar_error(f"No se pudo mover {ruta_origen}: {exc}")
+        resultado.agregar_error(f"No se pudo mover {imagen.ruta}: {exc}")
 
 
 def extraer_miembro_zip(
@@ -239,6 +338,7 @@ def extraer_miembro_zip(
     info: zipfile.ZipInfo,
     carpeta_destino: str,
     resultado: Resultado,
+    prefijo: str | None = None,
 ):
     nombre = nombre_miembro_zip(info)
     if not nombre:
@@ -247,10 +347,15 @@ def extraer_miembro_zip(
         )
         return
 
-    ruta_destino, ajustado = ruta_disponible(carpeta_destino, nombre)
+    prefijo_destino = obtener_prefijo_miembro_zip(info) or prefijo
+    nombre_destino, prefijo_aplicado = crear_nombre_destino_con_prefijo(
+        nombre,
+        prefijo_destino,
+    )
+    ruta_destino, ajustado = ruta_disponible(carpeta_destino, nombre_destino)
     descriptor, ruta_temporal = tempfile.mkstemp(
         prefix=".__extraer_zip_",
-        suffix=os.path.splitext(nombre)[1],
+        suffix=os.path.splitext(nombre_destino)[1],
         dir=carpeta_destino,
     )
     os.close(descriptor)
@@ -260,6 +365,8 @@ def extraer_miembro_zip(
             shutil.copyfileobj(origen, destino, length=1024 * 1024)
         os.replace(ruta_temporal, ruta_destino)
         resultado.imagenes_extraidas += 1
+        if prefijo_aplicado:
+            resultado.prefijos_aplicados += 1
         if ajustado:
             resultado.nombres_ajustados += 1
     except (
@@ -288,15 +395,15 @@ def ejecutar_trabajo(
     procesadas = 0
     total = trabajo.total
 
-    for ruta in trabajo.imagenes:
+    for imagen in trabajo.imagenes:
         if debe_cancelar is not None and debe_cancelar():
             resultado.cancelado = True
             return resultado
 
-        mover_imagen(ruta, carpeta_destino, resultado)
+        mover_imagen(imagen, carpeta_destino, resultado)
         procesadas += 1
         if al_progresar is not None:
-            al_progresar(procesadas, total, ruta)
+            al_progresar(procesadas, total, imagen.ruta)
 
     for archivo in trabajo.archivos_zip:
         if debe_cancelar is not None and debe_cancelar():
@@ -312,7 +419,13 @@ def ejecutar_trabajo(
                         resultado.cancelado = True
                         return resultado
 
-                    extraer_miembro_zip(contenido, info, carpeta_destino, resultado)
+                    extraer_miembro_zip(
+                        contenido,
+                        info,
+                        carpeta_destino,
+                        resultado,
+                        prefijo=archivo.prefijo,
+                    )
                     procesadas += 1
                     if al_progresar is not None:
                         al_progresar(
@@ -339,8 +452,7 @@ def aplanar_imagenes(
 ) -> Resultado:
     carpeta_raiz = os.path.abspath(carpeta_raiz)
     carpeta_destino = os.path.abspath(carpeta_destino or carpeta_raiz)
-    if not os.path.isdir(carpeta_destino):
-        raise FileNotFoundError(f"La carpeta destino no existe: {carpeta_destino}")
+    os.makedirs(carpeta_destino, exist_ok=True)
 
     carpeta_omitida = None
     if not rutas_iguales(carpeta_raiz, carpeta_destino) and ruta_dentro_de(
@@ -377,6 +489,7 @@ def crear_resumen(resultado: Resultado) -> str:
         f"Imagenes encontradas dentro de ZIP: {resultado.imagenes_en_zip}",
         f"Imagenes movidas: {resultado.imagenes_movidas}",
         f"Imagenes extraidas de ZIP: {resultado.imagenes_extraidas}",
+        f"Prefijos de carpeta aplicados: {resultado.prefijos_aplicados}",
         f"Nombres ajustados por coincidencia: {resultado.nombres_ajustados}",
         f"Errores: {resultado.errores}",
     ]
@@ -411,6 +524,10 @@ def main():
         carpeta = filedialog.askdirectory(title="Seleccionar carpeta a revisar")
         if carpeta:
             carpeta_var.set(carpeta)
+            if not carpeta_destino_var.get().strip():
+                carpeta_destino_var.set(
+                    os.path.join(carpeta, NOMBRE_CARPETA_DESTINO)
+                )
 
     boton_examinar_origen = ttk.Button(
         frame,
@@ -443,7 +560,7 @@ def main():
 
     radio_personalizada = ttk.Radiobutton(
         frame,
-        text="Seleccionar otra carpeta destino",
+        text=f"Crear/usar carpeta {NOMBRE_CARPETA_DESTINO} en otra ubicacion",
         variable=modo_destino_var,
         value="personalizada",
         command=actualizar_modo_destino,
@@ -456,7 +573,12 @@ def main():
     def seleccionar_carpeta_destino():
         carpeta = filedialog.askdirectory(title="Seleccionar carpeta destino")
         if carpeta:
-            carpeta_destino_var.set(carpeta)
+            try:
+                carpeta_destino_var.set(
+                    resolver_carpeta_destino(carpeta_var.get().strip(), carpeta)
+                )
+            except ValueError as exc:
+                messagebox.showerror("Destino invalido", str(exc))
 
     boton_examinar_destino = ttk.Button(
         frame,
@@ -471,6 +593,8 @@ def main():
         text=(
             "Se revisaran las subcarpetas de la carpeta origen.\n"
             "Las imagenes se moveran al destino elegido y tambien se extraeran alli los .zip.\n"
+            "Si provienen de carpetas N_capturas, se antepondra N_ al nombre.\n"
+            f"El destino personalizado usa la carpeta normalizada {NOMBRE_CARPETA_DESTINO}.\n"
             "Las carpetas y los ZIP originales no se eliminan. No se sobrescriben archivos."
         ),
         justify="left",
@@ -562,30 +686,40 @@ def main():
             messagebox.showerror("Ruta invalida", "La carpeta a revisar no existe.")
             return
 
-        destino = carpeta
+        carpeta_abs = os.path.abspath(carpeta)
+        destino = carpeta_abs
         if modo_destino_var.get() == "personalizada":
-            destino = carpeta_destino_var.get().strip()
-            if not destino:
+            destino_seleccionado = carpeta_destino_var.get().strip()
+            if not destino_seleccionado:
                 messagebox.showwarning(
                     "Falta destino",
-                    "Seleccione una carpeta destino.",
+                    "Seleccione una carpeta destino o contenedora.",
                 )
                 return
-            if not os.path.isdir(destino):
+            try:
+                destino = resolver_carpeta_destino(
+                    carpeta_abs,
+                    destino_seleccionado,
+                )
+            except ValueError as exc:
                 messagebox.showerror(
-                    "Ruta invalida",
-                    "La carpeta destino seleccionada no existe.",
+                    "Destino invalido",
+                    str(exc),
                 )
                 return
+            carpeta_destino_var.set(destino)
 
-        carpeta_abs = os.path.abspath(carpeta)
         destino_abs = os.path.abspath(destino)
         nota_destino = ""
+        if modo_destino_var.get() == "personalizada":
+            nota_destino = (
+                f"\nSi no existe, se creara la carpeta {NOMBRE_CARPETA_DESTINO}."
+            )
         if not rutas_iguales(carpeta_abs, destino_abs) and ruta_dentro_de(
             destino_abs,
             carpeta_abs,
         ):
-            nota_destino = (
+            nota_destino += (
                 "\nLa carpeta destino esta dentro de la carpeta revisada; "
                 "se omitira durante la exploracion."
             )
@@ -598,6 +732,7 @@ def main():
                 "Las imagenes encontradas se moveran a:\n\n"
                 f"{destino_abs}\n\n"
                 "Tambien se extraeran las imagenes de los archivos .zip.\n"
+                "Las imagenes de carpetas N_capturas recibiran el prefijo N_.\n"
                 "Las coincidencias de nombre recibiran un sufijo numerico.\n"
                 "Las carpetas y los ZIP no se eliminaran."
                 f"{nota_destino}\n\n"
