@@ -225,17 +225,26 @@ def calcular_distribucion_visor(
     return columnas, ancho_tarjeta, alto_miniatura
 
 
-def iterar_imagenes(carpeta: str) -> Iterator[str]:
-    with os.scandir(carpeta) as entradas:
-        for entrada in entradas:
-            try:
-                if (
-                    entrada.is_file(follow_symlinks=False)
-                    and entrada.name.lower().endswith(EXTENSIONES_VALIDAS)
-                ):
-                    yield entrada.path
-            except OSError:
-                continue
+def iterar_imagenes(carpeta: str, recursivo: bool = False) -> Iterator[str]:
+    if not recursivo:
+        try:
+            with os.scandir(carpeta) as entradas:
+                for entrada in entradas:
+                    try:
+                        if (
+                            entrada.is_file(follow_symlinks=False)
+                            and entrada.name.lower().endswith(EXTENSIONES_VALIDAS)
+                        ):
+                            yield entrada.path
+                    except OSError:
+                        continue
+        except OSError:
+            return
+    else:
+        for raiz, _, archivos in os.walk(carpeta, onerror=lambda e: None):
+            for nombre in archivos:
+                if nombre.lower().endswith(EXTENSIONES_VALIDAS):
+                    yield os.path.join(raiz, nombre)
 
 
 def iterar_lotes(
@@ -257,32 +266,47 @@ def contar_imagenes(
     tamano_lote: int,
     al_evento: CallbackEvento | None,
     debe_cancelar: CallbackCancelacion | None,
+    recursivo: bool = False,
 ):
     total = 0
     revisados = 0
-    with os.scandir(carpeta) as entradas:
-        for entrada in entradas:
-            if debe_cancelar is not None and debe_cancelar():
-                return total, True
 
-            revisados += 1
-            try:
-                if (
-                    entrada.is_file(follow_symlinks=False)
-                    and entrada.name.lower().endswith(EXTENSIONES_VALIDAS)
-                ):
-                    total += 1
-            except OSError:
-                pass
+    def _emit_event():
+        if al_evento is not None and revisados % tamano_lote == 0:
+            al_evento("conteo", {"archivos_revisados": revisados, "imagenes": total})
 
-            if al_evento is not None and revisados % tamano_lote == 0:
-                al_evento(
-                    "conteo",
-                    {
-                        "archivos_revisados": revisados,
-                        "imagenes": total,
-                    },
-                )
+    if not recursivo:
+        try:
+            with os.scandir(carpeta) as entradas:
+                for entrada in entradas:
+                    if debe_cancelar and debe_cancelar(): return total, True
+                    revisados += 1
+                    try:
+                        if (entrada.is_file(follow_symlinks=False) and
+                                entrada.name.lower().endswith(EXTENSIONES_VALIDAS)):
+                            total += 1
+                    except OSError:
+                        pass
+                    _emit_event()
+        except OSError:
+            pass
+    else:
+        for raiz, dirs, archivos in os.walk(carpeta, topdown=True, onerror=lambda e: None):
+            items_a_procesar = dirs + archivos
+            for nombre in items_a_procesar:
+                if debe_cancelar and debe_cancelar():
+                    if al_evento: al_evento("conteo", {"archivos_revisados": revisados, "imagenes": total})
+                    return total, True
+                
+                revisados += 1
+                if nombre.lower().endswith(EXTENSIONES_VALIDAS):
+                    try:
+                        # Necesario para no contar carpetas con extensiones de imagen
+                        if os.path.isfile(os.path.join(raiz, nombre)):
+                            total += 1
+                    except OSError:
+                        pass
+                _emit_event()
 
     if al_evento is not None:
         al_evento(
@@ -299,6 +323,7 @@ def procesar_imagenes_duplicadas(
     carpeta: str,
     similitud_minima: int = SIMILITUD_MINIMA_PREDETERMINADA,
     tamano_lote: int = TAMANO_LOTE_PREDETERMINADO,
+    recursivo: bool = False,
     al_evento: CallbackEvento | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
 ):
@@ -310,6 +335,7 @@ def procesar_imagenes_duplicadas(
         tamano_lote,
         al_evento,
         debe_cancelar,
+        recursivo=recursivo,
     )
     resultado = {
         "duplicates": {},
@@ -332,7 +358,7 @@ def procesar_imagenes_duplicadas(
 
     distancia_maxima = similitud_a_distancia_maxima(similitud_minima)
 
-    for lote in iterar_lotes(iterar_imagenes(carpeta), tamano_lote):
+    for lote in iterar_lotes(iterar_imagenes(carpeta, recursivo=recursivo), tamano_lote):
         ultima_ruta = lote[-1]
         for ruta_archivo in lote:
             if debe_cancelar is not None and debe_cancelar():
@@ -1176,6 +1202,12 @@ def main():
     )
     lote_spinbox.grid(row=3, column=1, pady=(4, 8), sticky="w")
 
+    subcarpetas_var = tk.BooleanVar(value=False)
+    subcarpetas_check = tk.Checkbutton(
+        frame, text="Revisar subcarpetas", variable=subcarpetas_var
+    )
+    subcarpetas_check.grid(row=3, column=2, padx=(8, 0), pady=(4, 8), sticky="w")
+
     tk.Label(
         frame,
         text=(
@@ -1239,6 +1271,7 @@ def main():
         lote_spinbox.config(state=estado)
         boton_examinar.config(state=estado)
         boton_buscar.config(state=estado)
+        subcarpetas_check.config(state=estado)
         boton_cancelar.config(state="normal" if en_proceso else "disabled")
 
     def poner_barra_determinada():
@@ -1276,6 +1309,8 @@ def main():
                 "El tamano del lote debe ser un entero entre 1 y 1000.",
             )
             return
+        
+        recursivo = subcarpetas_var.get()
 
         nonlocal proceso_activo
         proceso_activo = True
@@ -1292,6 +1327,7 @@ def main():
                     carpeta,
                     similitud,
                     tamano_lote=tamano_lote,
+                    recursivo=recursivo,
                     al_evento=lambda tipo, datos: mensajes.put(
                         ("evento", (tipo, datos))
                     ),
