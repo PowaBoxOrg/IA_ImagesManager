@@ -417,6 +417,9 @@ def mostrar_grupos_duplicados(duplicados: dict):
       no marcadas (debe quedar al menos una).
     - Botón "Eliminar TODO el grupo" permite borrar todas las imágenes del grupo
       actual (útil cuando todo el conjunto es indeseado).
+    - Para grupos grandes (cientos de imágenes de video) se usa carga perezosa:
+      solo se decodifican y muestran las miniaturas de las tarjetas visibles + un buffer.
+      Esto evita que a partir de ~400 imágenes dejen de cargarse visualmente.
     - Útil para limpiar conjuntos de fotogramas muy parecidos de video.
     """
     if Image is None or ImageOps is None or ImageTk is None:
@@ -435,6 +438,32 @@ def mostrar_grupos_duplicados(duplicados: dict):
     total_grupos_var = tk.IntVar(value=len(grupos))
     indice_grupo = tk.IntVar(value=0)
     referencias_imagenes: list[ImageTk.PhotoImage] = []
+
+    MAX_IMAGENES_SUBGRUPO = 480
+
+    # Seccionar grupos grandes en subgrupos
+    expanded_grupos = []
+    sub_info = []  # Almacena (id_grupo_principal, num_subgrupo, total_subgrupos)
+    main_id = 0
+    for key, paths in grupos:
+        paths = list(paths)
+        if len(paths) <= MAX_IMAGENES_SUBGRUPO:
+            expanded_grupos.append([key, paths])
+            sub_info.append((main_id, 1, 1))
+        else:
+            chunks = [
+                paths[i : i + MAX_IMAGENES_SUBGRUPO]
+                for i in range(0, len(paths), MAX_IMAGENES_SUBGRUPO)
+            ]
+            total_subgrupos = len(chunks)
+            for i, chunk in enumerate(chunks):
+                expanded_grupos.append([key, chunk])
+                sub_info.append((main_id, i + 1, total_subgrupos))
+        main_id += 1
+    grupos = expanded_grupos
+    # sub_info es paralelo a grupos
+
+    loaded_photos: dict[str, ImageTk.PhotoImage] = {}
 
     # Estado de selección por ruta (se mantiene entre re-renders del mismo grupo)
     selecciones: dict[str, tk.BooleanVar] = {}
@@ -467,6 +496,19 @@ def mostrar_grupos_duplicados(duplicados: dict):
     scroll_vertical.grid(row=0, column=1, sticky="ns")
     canvas.configure(yscrollcommand=scroll_vertical.set)
 
+    # Cuando el usuario hace scroll, cargamos las imágenes que entran en vista
+    def _on_scroll(*args):
+        canvas.yview(*args)
+        try:
+            frame_imagenes.update_idletasks()
+        except Exception:
+            pass
+        # No necesitamos recargar widgets (se crean todos al renderizar, <=480)
+        # Solo asegurar la región de scroll si es necesario
+        ventana.after(50, lambda: actualizar_region_desplazamiento(canvas.yview()[0] if canvas.winfo_exists() else 0))
+
+    scroll_vertical.config(command=_on_scroll)
+
     frame_imagenes = tk.Frame(canvas, bg="#2e2e2e")
     ventana_canvas = canvas.create_window(
         (0, 0),
@@ -479,9 +521,17 @@ def mostrar_grupos_duplicados(duplicados: dict):
     frame_navegacion.columnconfigure(1, weight=1)
 
     columnas_configuradas = 0
+    last_render_width = 0
+    last_render_height = 0
 
     def actualizar_region_desplazamiento(posicion: float = 0.0):
         frame_imagenes.update_idletasks()
+        try:
+            # Asegurar que el tamaño del contenido dentro del canvas esté correcto
+            req_h = frame_imagenes.winfo_reqheight()
+            canvas.itemconfigure(ventana_canvas, height=max(1, req_h))
+        except Exception:
+            pass
         canvas.configure(scrollregion=canvas.bbox(ventana_canvas))
         canvas.yview_moveto(posicion)
 
@@ -495,7 +545,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
         idx = indice_grupo.get()
         if idx >= len(grupos):
             return
-        rutas = grupos[idx][1]
+        key, rutas = grupos[idx]
         for i, ruta in enumerate(rutas):
             if ruta in selecciones:
                 selecciones[ruta].set(i == 0)
@@ -519,8 +569,17 @@ def mostrar_grupos_duplicados(duplicados: dict):
             return
         key, rutas = grupos[idx]
         if len(rutas) <= 1:
-            messagebox.showinfo("Información", "El grupo tiene una sola imagen. Nada que eliminar.")
-            return
+            # check if more in chain
+            has_more = False
+            if idx < len(sub_info):
+                curr_main = sub_info[idx][0]
+                for j in range(idx+1, len(grupos)):
+                    if sub_info[j][0] == curr_main and len(grupos[j][1]) > 0:
+                        has_more = True
+                        break
+            if not has_more:
+                messagebox.showinfo("Información", "El grupo tiene una sola imagen. Nada que eliminar.")
+                return
 
         a_mantener = [r for r in rutas if r in selecciones and selecciones[r].get()]
         a_eliminar = [r for r in rutas if not (r in selecciones and selecciones[r].get())]
@@ -553,27 +612,68 @@ def mostrar_grupos_duplicados(duplicados: dict):
             except Exception as exc:
                 errores.append(f"{os.path.basename(ruta)}: {exc}")
 
-        # Actualizar la lista del grupo (muta la original)
+        # Actualizar la lista del subgrupo (muta)
         rutas[:] = a_mantener
-        # Limpiar selecciones obsoletas y mantener solo las que quedan
+
+        # Si hay espacio, mover imágenes de subgrupos siguientes (Nb) hacia el actual (Na).
+        if idx < len(sub_info):
+            id_grupo_principal_actual = sub_info[idx][0]
+            while len(rutas) < MAX_IMAGENES_SUBGRUPO:
+                siguiente_idx = idx + 1
+                # Asegurar que el siguiente subgrupo existe y pertenece al mismo grupo principal
+                if (siguiente_idx < len(grupos) and
+                    siguiente_idx < len(sub_info) and
+                    sub_info[siguiente_idx][0] == id_grupo_principal_actual):
+
+                    rutas_siguientes = grupos[siguiente_idx][1]
+                    espacio_disponible = MAX_IMAGENES_SUBGRUPO - len(rutas)
+                    cantidad_a_mover = min(espacio_disponible, len(rutas_siguientes))
+
+                    if cantidad_a_mover > 0:
+                        rutas.extend(rutas_siguientes[:cantidad_a_mover])
+                        del rutas_siguientes[:cantidad_a_mover]
+
+                        if not rutas_siguientes:
+                            grupos.pop(siguiente_idx)
+                            sub_info.pop(siguiente_idx)
+                            # El total de grupos se actualizará al refrescar
+                    else:
+                        break  # No hay nada que mover
+                else:
+                    break  # No hay más subgrupos contiguos del mismo grupo principal
+
+        # Limpiar selecciones: kept True, pulled False
         selecciones.clear()
-        for i, ruta in enumerate(rutas):
-            selecciones[ruta] = tk.BooleanVar(value=True)  # ya fueron las seleccionadas
+        for ruta in rutas:
+            selecciones[ruta] = tk.BooleanVar(value=False)
+        for ruta in a_mantener:
+            if ruta in selecciones:
+                selecciones[ruta] = tk.BooleanVar(value=True)
 
         if len(rutas) <= 1:
-            # Quitar el grupo del visor (ya no califica como duplicado)
-            grupos.pop(idx)
-            total_grupos_var.set(len(grupos))
-            if not grupos:
-                messagebox.showinfo(
-                    "Grupos limpiados",
-                    f"Se eliminaron {eliminados} imágenes.\nNo quedan grupos con múltiples imágenes."
-                )
-                ventana.destroy()
+            # check if more in the chain for this main
+            has_more = False
+            if idx < len(sub_info):
+                curr_main = sub_info[idx][0]
+                for j in range(idx, len(grupos)):
+                    if j < len(sub_info) and sub_info[j][0] == curr_main and len(grupos[j][1]) > 0:
+                        has_more = True
+                        break
+            if not has_more:
+                grupos.pop(idx)
+                if idx < len(sub_info):
+                    sub_info.pop(idx)
+                total_grupos_var.set(len(grupos))
+                if not grupos:
+                    messagebox.showinfo(
+                        "Grupos limpiados",
+                        f"Se eliminaron {eliminados} imágenes.\nNo quedan grupos con múltiples imágenes."
+                    )
+                    ventana.destroy()
+                    return
+                nuevo_idx = min(idx, len(grupos) - 1)
+                mostrar_grupo(nuevo_idx)
                 return
-            nuevo_idx = min(idx, len(grupos) - 1)
-            mostrar_grupo(nuevo_idx)
-            return
 
         # Refrescar el grupo actual
         actualizar_navegacion()
@@ -589,19 +689,22 @@ def mostrar_grupos_duplicados(duplicados: dict):
             messagebox.showinfo("Eliminación completada", f"Se eliminaron {eliminados} imágenes.")
 
     def eliminar_grupo_completo():
-        """Elimina TODAS las imágenes del grupo actual del disco y quita el grupo del visor."""
+        """Elimina TODAS las imágenes del grupo actual (subgrupo) del disco y quita el subgrupo del visor."""
         idx = indice_grupo.get()
         if idx >= len(grupos):
             return
-        _, rutas = grupos[idx]
+        key, rutas = grupos[idx]
         if not rutas:
             grupos.pop(idx)
+            if idx < len(sub_info):
+                sub_info.pop(idx)
             total_grupos_var.set(len(grupos))
             selecciones.clear()
             if not grupos:
                 ventana.destroy()
                 return
-            mostrar_grupo(min(idx, len(grupos) - 1))
+            nuevo_idx = min(idx, len(grupos) - 1)
+            mostrar_grupo(nuevo_idx)
             return
 
         preview = "\n".join(f"  • {os.path.basename(p)}" for p in rutas[:10])
@@ -609,9 +712,9 @@ def mostrar_grupos_duplicados(duplicados: dict):
             preview += f"\n  ... (+{len(rutas) - 10} más)"
 
         msg = (
-            f"⚠️ ¿ELIMINAR **TODAS** las {len(rutas)} imágenes de este grupo?\n\n"
+            f"⚠️ ¿ELIMINAR **TODAS** las {len(rutas)} imágenes de este subgrupo?\n\n"
             f"Archivos que se borrarán:\n{preview}\n\n"
-            "Esta acción es PERMANENTE. Se eliminará el grupo completo."
+            "Esta acción es PERMANENTE. Se eliminará el subgrupo completo."
         )
         if not messagebox.askyesno("Eliminar TODO el grupo", msg, icon="warning"):
             return
@@ -626,8 +729,10 @@ def mostrar_grupos_duplicados(duplicados: dict):
             except Exception as exc:
                 errores.append(f"{os.path.basename(ruta)}: {exc}")
 
-        # Quitar el grupo del visor
+        # Quitar el subgrupo del visor
         grupos.pop(idx)
+        if idx < len(sub_info):
+            sub_info.pop(idx)
         total_grupos_var.set(len(grupos))
         selecciones.clear()
 
@@ -651,18 +756,47 @@ def mostrar_grupos_duplicados(duplicados: dict):
         else:
             messagebox.showinfo("Grupo eliminado", f"Se eliminaron las {eliminados} imágenes del grupo.")
 
+    def _load_one(info: dict):
+        """Carga una sola miniatura si no está cargada todavía."""
+        ruta = info["ruta"]
+        if ruta in loaded_photos:
+            return
+        lbl = info.get("image_label")
+        size = info.get("thumb_size", (260, 220))
+        try:
+            with Image.open(ruta) as img:
+                img.seek(0)
+                imagen = ImageOps.exif_transpose(img).copy()
+            imagen.thumbnail(size, Image.Resampling.LANCZOS)
+            img_tk = ImageTk.PhotoImage(imagen)
+            loaded_photos[ruta] = img_tk
+            if lbl and lbl.winfo_exists():
+                lbl.configure(image=img_tk, text="")
+            container = info.get("img_container")
+            if container and container.winfo_exists():
+                container.update_idletasks()
+            fr = info.get("frame")
+            if fr and fr.winfo_exists():
+                fr.update_idletasks()
+        except Exception as exc:
+            if lbl and lbl.winfo_exists():
+                lbl.configure(text=f"Error\n{str(exc)[:25]}")
+
     def renderizar_grupo(reiniciar_desplazamiento: bool = False):
-        nonlocal columnas_configuradas
-        posicion = 0.0 if reiniciar_desplazamiento else canvas.yview()[0]
+        nonlocal columnas_configuradas, last_render_width, last_render_height
+        last_render_width = canvas.winfo_width()
+        last_render_height = canvas.winfo_height()
 
         for widget in frame_imagenes.winfo_children():
             widget.destroy()
         referencias_imagenes.clear()
+        loaded_photos.clear()
 
         idx_actual = indice_grupo.get()
         if idx_actual >= len(grupos):
             return
-        _, rutas = grupos[idx_actual]
+
+        key, rutas = grupos[idx_actual]
         columnas, ancho_tarjeta, alto_miniatura = calcular_distribucion_visor(
             canvas.winfo_width(),
             canvas.winfo_height(),
@@ -678,6 +812,11 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 uniform="tarjetas",
             )
         columnas_configuradas = columnas
+
+        # Configurar filas
+        num_filas = (len(rutas) + columnas - 1) // columnas
+        for r in range(num_filas):
+            frame_imagenes.rowconfigure(r, weight=0, minsize=80)
 
         for indice_imagen, ruta in enumerate(rutas):
             fila = indice_imagen // columnas
@@ -699,11 +838,20 @@ def mostrar_grupos_duplicados(duplicados: dict):
             )
 
             try:
+                # Contenedor reservado para evitar que la imagen se recorte a barra superior
+                img_container = tk.Frame(
+                    tarjeta,
+                    bg="#242424",
+                    height=alto_miniatura,
+                    width=max(100, ancho_tarjeta - 30),
+                )
+                img_container.pack(fill="x", pady=(0, 4))
+                img_container.pack_propagate(False)
+
+                # Cargar la miniatura aquí (dentro del límite de 480)
                 with Image.open(ruta) as img:
                     img.seek(0)
                     imagen = ImageOps.exif_transpose(img).copy()
-                    dimensiones = imagen.size
-
                 imagen.thumbnail(
                     (max(100, ancho_tarjeta - 30), alto_miniatura),
                     Image.Resampling.LANCZOS,
@@ -711,13 +859,13 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 img_tk = ImageTk.PhotoImage(imagen)
                 referencias_imagenes.append(img_tk)
 
-                panel = tk.Label(
-                    tarjeta,
+                image_label = tk.Label(
+                    img_container,
                     image=img_tk,
                     bg="#242424",
                     anchor="center",
                 )
-                panel.pack(fill="both", expand=True)
+                image_label.pack(fill="both", expand=True)
 
                 nombre_archivo = os.path.basename(ruta)
                 tk.Label(
@@ -728,15 +876,12 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     fg="#ffffff",
                     justify="center",
                     wraplength=max(180, ancho_tarjeta - 30),
-                ).pack(fill="x", pady=(8, 2))
+                ).pack(fill="x", pady=(0, 2))
 
                 fecha_creacion = datetime.fromtimestamp(os.path.getctime(ruta)).strftime("%Y-%m-%d %H:%M:%S")
                 tk.Label(
                     tarjeta,
-                    text=(
-                        f"Dimensiones: {dimensiones[0]} x {dimensiones[1]}\n"
-                        f"Fecha: {fecha_creacion}"
-                    ),
+                    text=f"Fecha: {fecha_creacion}",
                     font=("Arial", 9),
                     bg="#3a3a3a",
                     fg="#d6d6d6",
@@ -746,7 +891,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 # Checkbox de selección "Mantener"
                 var = selecciones.get(ruta)
                 if var is None:
-                    # fallback (no debería pasar si reset_selecciones se llamó)
                     var = tk.BooleanVar(value=(indice_imagen == 0))
                     selecciones[ruta] = var
                 chk = tk.Checkbutton(
@@ -760,7 +904,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     activeforeground="#ffffff",
                     font=("Arial", 9, "bold"),
                 )
-                chk.pack(fill="x", pady=(4, 0))
+                chk.pack(fill="x", pady=(2, 0))
 
             except Exception as exc:
                 tk.Label(
@@ -772,26 +916,47 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     justify="left",
                 ).pack(fill="both", expand=True)
 
-        ventana.after_idle(actualizar_region_desplazamiento, posicion)
+        # Forzar tamaño del canvas window para contenido alto
+        try:
+            frame_imagenes.update_idletasks()
+            req_w = frame_imagenes.winfo_reqwidth()
+            req_h = frame_imagenes.winfo_reqheight()
+            canvas.itemconfigure(ventana_canvas, width=max(1, req_w), height=max(1, req_h))
+        except Exception:
+            pass
+
+        actualizar_region_desplazamiento(0.0 if reiniciar_desplazamiento else canvas.yview()[0])
 
     def actualizar_navegacion():
         indice = indice_grupo.get()
         if indice >= len(grupos):
             return
-        _, rutas = grupos[indice]
-        total = total_grupos_var.get()
-        cabecera_var.set(
-            f"Grupo {indice + 1} de {total} | "
-            f"{len(rutas)} imagen(es)"
-        )
+
+        key, rutas = grupos[indice]
+        total_subgrupos_en_visor = total_grupos_var.get()
+        n_imagenes = len(rutas)
+
+        if indice < len(sub_info):
+            main_id, sub_num, total_subs = sub_info[indice]
+            # El título del visor indica el subgrupo actual
+            ventana.title(f"Grupo {main_id + 1} (Subgrupo {sub_num}/{total_subs}) - ImagenesRepetidas")
+            cabecera_var.set(
+                f"Grupo {main_id + 1} - Subgrupo {sub_num} de {total_subs} | {n_imagenes} imagen(es)"
+            )
+        else: # Fallback por si sub_info no estuviera sincronizado
+            ventana.title(f"Grupo {indice + 1} - ImagenesRepetidas")
+            cabecera_var.set(
+                f"Grupo {indice + 1} | {n_imagenes} imagen(es)"
+            )
+
         btn_anterior.config(state="normal" if indice > 0 else "disabled")
         btn_siguiente.config(
-            state="normal" if indice < total - 1 else "disabled"
+            state="normal" if indice < total_subgrupos_en_visor - 1 else "disabled"
         )
 
     def mostrar_grupo(indice: int):
         indice_grupo.set(indice)
-        _, rutas = grupos[indice]
+        key, rutas = grupos[indice]
         reset_selecciones(rutas)
         actualizar_navegacion()
         renderizar_grupo(reiniciar_desplazamiento=True)
@@ -909,18 +1074,36 @@ def mostrar_grupos_duplicados(duplicados: dict):
             ventana.after_cancel(resize_after_id)
 
         def redibujar():
-            nonlocal resize_after_id
+            nonlocal resize_after_id, last_render_width, last_render_height
             resize_after_id = None
-            if ventana.winfo_exists():
-                renderizar_grupo(reiniciar_desplazamiento=False)
+            if not ventana.winfo_exists():
+                return
+            w = canvas.winfo_width()
+            h = canvas.winfo_height()
+            # Evitar rebuilds completos en cambios pequeños o durante maximize (varios eventos de resize)
+            # Solo full rebuild si el cambio es significativo (evita empalmes y layouts rotos)
+            if abs(w - last_render_width) < 40 and abs(h - last_render_height) < 40:
+                # small change: no full reload needed
+                actualizar_region_desplazamiento( canvas.yview()[0] if canvas.winfo_exists() else 0 )
+                return
+            last_render_width = w
+            last_render_height = h
+            renderizar_grupo(reiniciar_desplazamiento=False)
 
-        resize_after_id = ventana.after(180, redibujar)
+        resize_after_id = ventana.after(250, redibujar)  # debounce un poco más largo para maximize
 
     canvas.bind("<Configure>", ajustar_canvas)
 
     def desplazar_rueda(event):
         if event.delta:
             canvas.yview_scroll(-1 if event.delta > 0 else 1, "units")
+        try:
+            frame_imagenes.update_idletasks()
+        except Exception:
+            pass
+        # No necesitamos recargar widgets (se crean todos al renderizar, <=480)
+        # Solo asegurar la región de scroll si es necesario
+        ventana.after(50, lambda: actualizar_region_desplazamiento(canvas.yview()[0] if canvas.winfo_exists() else 0))
         return "break"
 
     ventana.bind("<MouseWheel>", desplazar_rueda)
@@ -930,6 +1113,19 @@ def mostrar_grupos_duplicados(duplicados: dict):
     ventana.bind("<d>", lambda _event: eliminar_no_seleccionadas())
     ventana.bind("<Shift-Delete>", lambda _event: eliminar_grupo_completo())
     ventana.bind("<Control-Delete>", lambda _event: eliminar_grupo_completo())
+
+    def _try_maximize(win):
+        # Para mejor usabilidad con grupos grandes, abrimos maximizado.
+        # Llamado con delay para que el render inicial termine antes de resize adicional.
+        try:
+            win.state('zoomed')
+        except Exception:
+            try:
+                win.attributes('-zoomed', True)
+            except Exception:
+                pass
+
+    ventana.after(150, lambda: _try_maximize(ventana))
     ventana.after_idle(mostrar_grupo, 0)
 
 
