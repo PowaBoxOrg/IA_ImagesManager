@@ -45,6 +45,10 @@ import tkinter as tk
 from collections.abc import Callable, Iterator
 from tkinter import filedialog, messagebox, ttk
 
+from motores.imagenes import crear_huella_visual as _crear_huella_compartida
+from motores.imagenes import distancia_visual as _distancia_visual_compartida
+from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+
 
 _error_relanzamiento = ""
 
@@ -161,9 +165,7 @@ class IndiceHuellas:
 
 
 def rutas_iguales(ruta_a: str, ruta_b: str) -> bool:
-    return os.path.normcase(os.path.abspath(ruta_a)) == os.path.normcase(
-        os.path.abspath(ruta_b)
-    )
+    return _rutas_iguales_compartida(ruta_a, ruta_b)
 
 
 def resolver_carpeta_repetidas(
@@ -228,16 +230,14 @@ def iterar_lotes(
 
 
 def crear_huella_visual(imagen) -> bytes:
-    remuestreo = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    miniatura = imagen.convert("L").resize(TAMANO_HUELLA_VISUAL, remuestreo)
-    return miniatura.tobytes()
+    return _crear_huella_compartida(imagen, TAMANO_HUELLA_VISUAL)
 
 
 def calcular_distancia_visual(
     huella_a: bytes,
     huella_b: bytes,
 ) -> int:
-    return sum(abs(pixel_a - pixel_b) for pixel_a, pixel_b in zip(huella_a, huella_b))
+    return _distancia_visual_compartida(huella_a, huella_b)
 
 
 def distancia_visual_a_porcentaje(distancia: int) -> float:

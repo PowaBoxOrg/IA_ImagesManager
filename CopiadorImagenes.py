@@ -4,6 +4,8 @@ import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+
 try:
     from PIL import Image, ImageTk
 except Exception as exc:  # pragma: no cover
@@ -58,9 +60,7 @@ def copiar_sin_conflicto(ruta_src: str, carpeta_destino: str) -> str:
 
 
 def rutas_iguales(ruta_a: str, ruta_b: str) -> bool:
-    return os.path.normcase(os.path.abspath(ruta_a)) == os.path.normcase(
-        os.path.abspath(ruta_b)
-    )
+    return _rutas_iguales_compartida(ruta_a, ruta_b)
 
 
 def resolver_carpeta_destino(

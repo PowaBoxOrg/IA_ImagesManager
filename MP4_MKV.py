@@ -3,24 +3,13 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-
-def ffmpeg_disponible() -> bool:
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except Exception:
-        return False
+from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
+from motores.ffmpeg import ffmpeg_disponible
 
 
 def convertir_mp4_a_mkv(archivo_mp4: str, archivo_mkv: str, codec_video: str = "copy", codec_audio: str = "copy"):
     """Convierte un archivo MP4 a MKV usando FFmpeg."""
     comando = [
-        "ffmpeg",
         "-i",
         archivo_mp4,
         "-c:v",
@@ -32,7 +21,9 @@ def convertir_mp4_a_mkv(archivo_mp4: str, archivo_mkv: str, codec_video: str = "
     ]
 
     try:
-        subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        resultado = ejecutar_ffmpeg(comando)
+        if not resultado.correcto:
+            raise RuntimeError(resultado.error)
         print(f"Conversion exitosa: {archivo_mp4} -> {archivo_mkv}")
         return True, ""
     except subprocess.CalledProcessError as exc:

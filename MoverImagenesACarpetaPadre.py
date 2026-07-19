@@ -10,6 +10,10 @@ from dataclasses import dataclass, field
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
+from motores.archivos import ruta_dentro_de as _ruta_dentro_de_compartida
+from motores.archivos import ruta_normalizada as _ruta_normalizada_compartida
+from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+
 
 EXTENSIONES_IMAGEN = {
     ".avif",
@@ -188,20 +192,15 @@ def ruta_disponible(carpeta_destino: str, nombre_archivo: str) -> tuple[str, boo
 
 
 def ruta_normalizada(ruta: str) -> str:
-    return os.path.normcase(os.path.abspath(ruta))
+    return _ruta_normalizada_compartida(ruta)
 
 
 def rutas_iguales(ruta_a: str, ruta_b: str) -> bool:
-    return ruta_normalizada(ruta_a) == ruta_normalizada(ruta_b)
+    return _rutas_iguales_compartida(ruta_a, ruta_b)
 
 
 def ruta_dentro_de(ruta: str, carpeta: str) -> bool:
-    ruta_abs = ruta_normalizada(ruta)
-    carpeta_abs = ruta_normalizada(carpeta)
-    try:
-        return os.path.commonpath([ruta_abs, carpeta_abs]) == carpeta_abs
-    except ValueError:
-        return False
+    return _ruta_dentro_de_compartida(ruta, carpeta)
 
 
 def resolver_carpeta_destino(

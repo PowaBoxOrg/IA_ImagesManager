@@ -3,18 +3,8 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-
-def ffmpeg_disponible() -> bool:
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except Exception:
-        return False
+from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
+from motores.ffmpeg import ffmpeg_disponible
 
 
 def _validar_resize(resize: str) -> bool:
@@ -39,7 +29,6 @@ def convertir_mp4_a_gif(archivo_mp4: str, archivo_gif: str, fps: int = 15, resiz
     )
 
     comando = [
-        "ffmpeg",
         "-i",
         archivo_mp4,
         "-vf",
@@ -51,7 +40,9 @@ def convertir_mp4_a_gif(archivo_mp4: str, archivo_gif: str, fps: int = 15, resiz
     ]
 
     try:
-        subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        resultado = ejecutar_ffmpeg(comando)
+        if not resultado.correcto:
+            raise RuntimeError(resultado.error)
         print(f"Conversion exitosa: {archivo_mp4} -> {archivo_gif}")
         return True, ""
     except subprocess.CalledProcessError as exc:

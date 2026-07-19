@@ -50,6 +50,9 @@ from collections import defaultdict
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+from motores.imagenes import crear_huella_visual as _crear_huella_compartida
+from motores.imagenes import distancia_visual as _distancia_visual_compartida
+
 
 _error_relanzamiento = ""
 
@@ -170,14 +173,12 @@ def obtener_valor_numerico(nombre: str) -> int:
 
 def crear_huella_visual(imagen) -> bytes:
     """Genera huella visual compacta: miniatura gris 32x32 como bytes."""
-    remuestreo = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
-    miniatura = imagen.convert("L").resize(TAMANO_HUELLA_VISUAL, remuestreo)
-    return miniatura.tobytes()
+    return _crear_huella_compartida(imagen, TAMANO_HUELLA_VISUAL)
 
 
 def calcular_distancia_visual(huella_a: bytes, huella_b: bytes) -> int:
     """Suma de diferencias absolutas por pixel (0 .. DISTANCIA_VISUAL_MAXIMA)."""
-    return sum(abs(a - b) for a, b in zip(huella_a, huella_b))
+    return _distancia_visual_compartida(huella_a, huella_b)
 
 
 def similitud_a_distancia_maxima(similitud_min: int) -> int:

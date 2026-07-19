@@ -5,7 +5,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from ProcesadorLotes import AccionLote, buscar_archivos, ejecutar_accion_lote
+from motores.lotes import AccionLote, buscar_archivos, ejecutar_accion_lote
 
 
 def relanzar_con_python_global() -> bool:

@@ -75,6 +75,8 @@ import tkinter as tk
 from collections.abc import Callable, Iterator
 from tkinter import filedialog, messagebox, ttk
 
+from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+
 
 def relanzar_con_python_global() -> bool:
     """Relanza el script fuera del entorno virtual cuando sea posible."""
@@ -126,9 +128,7 @@ def obtener_valor_numerico(nombre: str) -> int:
 
 
 def rutas_iguales(ruta_a: str, ruta_b: str) -> bool:
-    return os.path.normcase(os.path.abspath(ruta_a)) == os.path.normcase(
-        os.path.abspath(ruta_b)
-    )
+    return _rutas_iguales_compartida(ruta_a, ruta_b)
 
 
 def resolver_carpeta_destino(

@@ -5,21 +5,11 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
+from motores.ffmpeg import ffmpeg_disponible
+
 
 DEFAULT_RESOLUTION = "1280x720"
-
-
-def ffmpeg_disponible() -> bool:
-    try:
-        subprocess.run(
-            ["ffmpeg", "-version"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        return True
-    except Exception:
-        return False
 
 
 def resolucion_valida(resolucion: str) -> bool:
@@ -34,7 +24,6 @@ def ruta_salida_por_defecto(ruta_mp3: str) -> str:
 def convertir_mp3_a_mp4(ruta_mp3: str, ruta_mp4: str, resolucion: str = DEFAULT_RESOLUTION):
     """Convierte un MP3 a MP4 con fondo negro usando FFmpeg."""
     comando = [
-        "ffmpeg",
         "-f",
         "lavfi",
         "-i",
@@ -59,7 +48,9 @@ def convertir_mp3_a_mp4(ruta_mp3: str, ruta_mp4: str, resolucion: str = DEFAULT_
     ]
 
     try:
-        subprocess.run(comando, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        resultado = ejecutar_ffmpeg(comando)
+        if not resultado.correcto:
+            raise RuntimeError(resultado.error)
         return True, ""
     except subprocess.CalledProcessError as exc:
         error = (exc.stderr or "").strip()
