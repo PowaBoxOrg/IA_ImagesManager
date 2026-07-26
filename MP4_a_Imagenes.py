@@ -8,6 +8,51 @@ from tkinter import filedialog, messagebox
 
 _error_relanzamiento = ""
 
+# Limite superior del rango (segundos), intervalo entre capturas (segundos).
+# El ultimo rango no tiene limite superior.
+RANGOS_CAPTURA = (
+    (95.0, 1.0),    # R1: 0:00 a 1:35
+    (155.0, 3.0),   # R2: mas de 1:35 a 2:35
+    (310.0, 10.0),  # R3: mas de 2:35 a 5:10
+    (635.0, 30.0),  # R4: mas de 5:10 a 10:35
+    (float("inf"), 60.0),  # R5: mas de 10:35
+)
+
+# Cantidad objetivo predeterminada para cada rango. Conserva aproximadamente
+# la densidad de los intervalos originales cerca del limite de cada rango.
+CANTIDADES_CAPTURA = (95, 52, 31, 22, 20)
+
+
+def calcular_plan_capturas(
+    duracion_segundos: float,
+    cantidades: tuple[int, ...] | list[int] | None = None,
+) -> tuple[int, float, float]:
+    """Devuelve (rango, intervalo, imagenes_por_segundo) para una duracion.
+
+    La densidad o ratio se calcula como 1 / intervalo. Por ejemplo, un
+    intervalo de 10 segundos equivale a 0.1 imagenes por segundo.
+    """
+    if duracion_segundos < 0:
+        raise ValueError("La duracion no puede ser negativa.")
+
+    if cantidades is not None:
+        if len(cantidades) != len(RANGOS_CAPTURA):
+            raise ValueError("Debe indicar una cantidad para cada rango.")
+        if any(cantidad <= 0 for cantidad in cantidades):
+            raise ValueError("Las cantidades de capturas deben ser mayores que cero.")
+
+    for rango, (limite, intervalo_predeterminado) in enumerate(RANGOS_CAPTURA, start=1):
+        if duracion_segundos <= limite:
+            if cantidades is None:
+                intervalo = intervalo_predeterminado
+            else:
+                intervalo = duracion_segundos / cantidades[rango - 1]
+                if intervalo <= 0:
+                    intervalo = intervalo_predeterminado
+            return rango, intervalo, 1.0 / intervalo
+
+    raise RuntimeError("No se pudo determinar el rango de captura.")
+
 
 def relanzar_con_python_global() -> bool:
     global _error_relanzamiento
@@ -57,7 +102,11 @@ def crear_carpeta_salida(ruta_video: str) -> str:
             indice += 1
 
 
-def extraer_capturas(ruta_video: str, intervalo: float):
+def extraer_capturas(
+    ruta_video: str,
+    intervalo: float | None,
+    cantidades: tuple[int, ...] | list[int] | None = None,
+):
     if cv2 is None:
         raise RuntimeError(f"OpenCV (cv2) no disponible. Detalle: {_cv2_import_error}")
 
@@ -75,12 +124,23 @@ def extraer_capturas(ruta_video: str, intervalo: float):
         raise RuntimeError("No se pudo obtener la duracion del video.")
 
     duracion = total_frames / fps
+    limite_capturas = None
+    if intervalo is None:
+        rango, intervalo, _ratio = calcular_plan_capturas(duracion, cantidades)
+        if cantidades is not None:
+            limite_capturas = cantidades[rango - 1]
+    elif intervalo <= 0:
+        video.release()
+        raise ValueError("El intervalo debe ser mayor que cero.")
+
     carpeta_salida = crear_carpeta_salida(ruta_video)
     tiempo = 0.0
     total = 0
 
     try:
-        while tiempo < duracion:
+        while tiempo < duracion and (
+            limite_capturas is None or total < limite_capturas
+        ):
             video.set(cv2.CAP_PROP_POS_MSEC, tiempo * 1000.0)
             leido, imagen = video.read()
             if not leido:

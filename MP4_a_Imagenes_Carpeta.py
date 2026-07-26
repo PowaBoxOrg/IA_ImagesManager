@@ -27,7 +27,10 @@ def relanzar_con_python_global() -> bool:
         return False
 
 
-def crear_accion(intervalo: float) -> AccionLote:
+def crear_accion(
+    intervalo: float | None,
+    cantidades: tuple[int, ...] | list[int] | None = None,
+) -> AccionLote:
     import MP4_a_Imagenes
 
     if MP4_a_Imagenes.cv2 is None:
@@ -40,7 +43,9 @@ def crear_accion(intervalo: float) -> AccionLote:
     return AccionLote(
         nombre="MP4 a imagenes",
         extensiones=(".mp4",),
-        procesar_archivo=lambda ruta: MP4_a_Imagenes.extraer_capturas(ruta, intervalo),
+        procesar_archivo=lambda ruta: MP4_a_Imagenes.extraer_capturas(
+            ruta, intervalo, cantidades
+        ),
     )
 
 
@@ -56,9 +61,13 @@ def resumen_errores(errores, limite: int = 8) -> str:
     return "\n".join(lineas)
 
 
-def main():
+def main(automatico: bool = False):
     root = tk.Tk()
-    root.title("MP4 -> Imagenes por carpeta")
+    root.title(
+        "Capturador automatico"
+        if automatico
+        else "MP4 -> Imagenes por carpeta"
+    )
     root.resizable(False, False)
 
     frame = tk.Frame(root, padx=12, pady=12)
@@ -87,22 +96,67 @@ def main():
         pady=(4, 8),
     )
 
-    tk.Label(frame, text="Capturar un frame cada N segundos:").grid(
-        row=2,
-        column=0,
-        columnspan=2,
-        sticky="w",
-    )
     intervalo_var = tk.StringVar(value="5")
-    intervalo_entry = tk.Entry(frame, textvariable=intervalo_var, width=12)
-    intervalo_entry.grid(row=3, column=0, pady=(4, 8), sticky="w")
+    intervalo_entry = None
+    cantidad_vars = []
+    if automatico:
+        tk.Label(
+            frame,
+            text="Cantidad objetivo de capturas según la duración:",
+            justify="left",
+        ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 4))
+
+        import MP4_a_Imagenes
+
+        nombres_rangos = (
+            "R1  ≤ 1:35",
+            "R2  ≤ 2:35",
+            "R3  ≤ 5:10",
+            "R4  ≤ 10:35",
+            "R5  > 10:35",
+        )
+        controles_rangos = tk.Frame(frame)
+        controles_rangos.grid(row=3, column=0, columnspan=3, sticky="we")
+        for fila, (nombre, valor) in enumerate(
+            zip(nombres_rangos, MP4_a_Imagenes.CANTIDADES_CAPTURA)
+        ):
+            variable = tk.IntVar(value=valor)
+            cantidad_vars.append(variable)
+            tk.Label(controles_rangos, text=nombre, width=12, anchor="w").grid(
+                row=fila, column=0, sticky="w"
+            )
+            tk.Scale(
+                controles_rangos,
+                from_=1,
+                to=300,
+                orient="horizontal",
+                variable=variable,
+                showvalue=False,
+                length=310,
+            ).grid(row=fila, column=1, sticky="we")
+            tk.Spinbox(
+                controles_rangos,
+                from_=1,
+                to=9999,
+                textvariable=variable,
+                width=7,
+            ).grid(row=fila, column=2, padx=(8, 0))
+    else:
+        tk.Label(frame, text="Capturar un frame cada N segundos:").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+        )
+        intervalo_entry = tk.Entry(frame, textvariable=intervalo_var, width=12)
+        intervalo_entry.grid(row=3, column=0, pady=(4, 8), sticky="w")
 
     recursivo_var = tk.BooleanVar(value=False)
     tk.Checkbutton(
         frame,
         text="Incluir subcarpetas",
         variable=recursivo_var,
-    ).grid(row=3, column=1, columnspan=2, sticky="w", pady=(4, 8))
+    ).grid(row=4, column=1, columnspan=2, sticky="w", pady=(4, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     barra = ttk.Progressbar(
@@ -111,7 +165,7 @@ def main():
         maximum=100,
         length=470,
     )
-    barra.grid(row=4, column=0, columnspan=3, sticky="we", pady=(0, 6))
+    barra.grid(row=5, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
     estado_var = tk.StringVar(value="Seleccione una carpeta para comenzar.")
     tk.Label(
@@ -120,10 +174,10 @@ def main():
         justify="left",
         anchor="w",
         wraplength=500,
-    ).grid(row=5, column=0, columnspan=3, sticky="we", pady=(0, 8))
+    ).grid(row=6, column=0, columnspan=3, sticky="we", pady=(0, 8))
 
     botones = tk.Frame(frame)
-    botones.grid(row=6, column=0, columnspan=3, sticky="we")
+    botones.grid(row=7, column=0, columnspan=3, sticky="we")
     botones.columnconfigure(0, weight=1)
     botones.columnconfigure(1, weight=1)
 
@@ -200,16 +254,30 @@ def main():
             messagebox.showerror("Ruta invalida", "La carpeta no existe.")
             return
 
-        try:
-            intervalo = float(intervalo_var.get().strip().replace(",", "."))
-            if intervalo <= 0:
-                raise ValueError()
-        except ValueError:
-            messagebox.showerror("Dato invalido", "N debe ser un numero mayor que 0.")
-            return
+        intervalo = None
+        cantidades = None
+        if not automatico:
+            try:
+                intervalo = float(intervalo_var.get().strip().replace(",", "."))
+                if intervalo <= 0:
+                    raise ValueError()
+            except ValueError:
+                messagebox.showerror("Dato invalido", "N debe ser un numero mayor que 0.")
+                return
+        else:
+            try:
+                cantidades = tuple(variable.get() for variable in cantidad_vars)
+                if any(cantidad <= 0 for cantidad in cantidades):
+                    raise ValueError()
+            except (ValueError, tk.TclError):
+                messagebox.showerror(
+                    "Dato invalido",
+                    "Cada rango debe tener una cantidad entera mayor que 0.",
+                )
+                return
 
         try:
-            accion = crear_accion(intervalo)
+            accion = crear_accion(intervalo, cantidades)
             archivos = buscar_archivos(
                 carpeta,
                 accion.extensiones,

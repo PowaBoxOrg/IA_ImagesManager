@@ -38,6 +38,7 @@ HERRAMIENTAS = (
     Herramienta("Extraer frames de GIF", "ExtractorGif.py", "Extrae frames PNG de uno o varios GIF.", ("Imagen", "Multimedia")),
     Herramienta("Video a imagenes", "MP4_a_Imagenes.py", "Extrae capturas de un video a intervalos.", ("Multimedia", "Imagen")),
     Herramienta("Carpeta de videos a imagenes", "MP4_a_Imagenes_Carpeta.py", "Procesa varios MP4 por lotes.", ("Multimedia", "Imagen")),
+    Herramienta("Capturador automatico", "CapturadorAutomatico.py", "Ajusta la densidad de capturas a la duracion de cada video.", ("Multimedia", "Imagen")),
     Herramienta("Video a MP3", "MP4_a_MP3.py", "Extrae audio de archivos o carpetas de videos.", ("Multimedia",)),
     Herramienta("MP4 a MKV", "MP4_MKV.py", "Cambia el contenedor o codecs de video y audio.", ("Multimedia",)),
     Herramienta("MP4 a GIF", "mp4_a_gif_ffmpeg.py", "Crea GIF optimizado mediante FFmpeg.", ("Multimedia", "Imagen")),
@@ -49,4 +50,3 @@ HERRAMIENTAS = (
 
 def herramientas_de(seccion: str) -> tuple[Herramienta, ...]:
     return tuple(h for h in HERRAMIENTAS if seccion in h.secciones)
-
