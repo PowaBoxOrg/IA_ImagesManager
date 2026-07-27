@@ -113,7 +113,10 @@ def main(automatico: bool = False):
             "R2  ≤ 2:35",
             "R3  ≤ 5:10",
             "R4  ≤ 10:35",
-            "R5  > 10:35",
+            "R5  ≤ 20:35",
+            "R6  ≤ 30:35",
+            "R7  < 1 hora",
+            "R8  ≥ 1 hora",
         )
         controles_rangos = tk.Frame(frame)
         controles_rangos.grid(row=3, column=0, columnspan=3, sticky="we")

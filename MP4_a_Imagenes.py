@@ -15,12 +15,15 @@ RANGOS_CAPTURA = (
     (155.0, 3.0),   # R2: mas de 1:35 a 2:35
     (310.0, 10.0),  # R3: mas de 2:35 a 5:10
     (635.0, 30.0),  # R4: mas de 5:10 a 10:35
-    (float("inf"), 60.0),  # R5: mas de 10:35
+    (1235.0, 60.0),  # R5: mas de 10:35 a 20:35
+    (1835.0, 60.0),  # R6: mas de 20:35 a 30:35
+    (3600.0, 60.0),  # R7: mas de 30:35 a 1 hora
+    (float("inf"), 60.0),  # R8: 1 hora o mas
 )
 
 # Cantidad objetivo predeterminada para cada rango. Conserva aproximadamente
 # la densidad de los intervalos originales cerca del limite de cada rango.
-CANTIDADES_CAPTURA = (95, 52, 31, 22, 20)
+CANTIDADES_CAPTURA = (95, 52, 31, 22, 20, 30, 60, 60)
 
 
 def calcular_plan_capturas(
