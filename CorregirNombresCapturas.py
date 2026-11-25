@@ -6,9 +6,12 @@ from dataclasses import dataclass, field
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
+import aplicacion.tema
+
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos, nombre_con_numero_carpeta
+
 
 PATRON_CARPETA = re.compile(r"^(\d+)_capturas$", re.IGNORECASE)
-PATRON_PREFIJO_CAPTURA = re.compile(r"^\d+_(captura(?:[_ -].*)?)$", re.IGNORECASE)
 EXTENSIONES_IMAGEN = {
     ".avif",
     ".bmp",
@@ -65,16 +68,17 @@ def es_imagen(nombre_archivo: str) -> bool:
     return os.path.splitext(nombre_archivo)[1].lower() in EXTENSIONES_IMAGEN
 
 
-def crear_nombre_destino(nombre_archivo: str, prefijo: str) -> str | None:
-    prefijo_esperado = f"{prefijo}_"
-    if nombre_archivo.startswith(prefijo_esperado):
+def crear_nombre_destino(
+    nombre_archivo: str,
+    prefijo: str,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
+) -> str | None:
+    corregido = nombre_con_numero_carpeta(nombre_archivo, prefijo) or nombre_archivo
+    final = nombre_con_afijos(corregido, prefijo_extra, sufijo_extra)
+    if final == nombre_archivo:
         return None
-
-    coincidencia = PATRON_PREFIJO_CAPTURA.fullmatch(nombre_archivo)
-    if coincidencia:
-        return f"{prefijo}_{coincidencia.group(1)}"
-
-    return f"{prefijo}_{nombre_archivo}"
+    return final
 
 
 def encontrar_carpetas(carpeta_raiz: str, resultado: Resultado) -> list[CarpetaCapturas]:
@@ -93,7 +97,12 @@ def encontrar_carpetas(carpeta_raiz: str, resultado: Resultado) -> list[CarpetaC
     return carpetas
 
 
-def renombrar_carpeta(carpeta: CarpetaCapturas, resultado: Resultado):
+def renombrar_carpeta(
+    carpeta: CarpetaCapturas,
+    resultado: Resultado,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
+):
     try:
         with os.scandir(carpeta.ruta) as iterador:
             entradas = sorted(iterador, key=lambda entrada: entrada.name.lower())
@@ -118,7 +127,12 @@ def renombrar_carpeta(carpeta: CarpetaCapturas, resultado: Resultado):
             continue
 
         resultado.imagenes += 1
-        nombre_destino = crear_nombre_destino(entrada.name, carpeta.prefijo)
+        nombre_destino = crear_nombre_destino(
+            entrada.name,
+            carpeta.prefijo,
+            prefijo_extra,
+            sufijo_extra,
+        )
         if nombre_destino is None:
             resultado.ya_correctos += 1
             continue
@@ -144,7 +158,11 @@ def renombrar_carpeta(carpeta: CarpetaCapturas, resultado: Resultado):
 def corregir_nombres(
     carpeta_raiz: str,
     al_progresar: Callable[[int, int, str], None] | None = None,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
 ) -> Resultado:
+    prefijo_extra = afijo(prefijo_extra)
+    sufijo_extra = afijo(sufijo_extra)
     resultado = Resultado()
     carpetas = encontrar_carpetas(carpeta_raiz, resultado)
     resultado.carpetas = len(carpetas)
@@ -152,7 +170,7 @@ def corregir_nombres(
     for indice, carpeta in enumerate(carpetas, start=1):
         if al_progresar is not None:
             al_progresar(indice, len(carpetas), carpeta.ruta)
-        renombrar_carpeta(carpeta, resultado)
+        renombrar_carpeta(carpeta, resultado, prefijo_extra, sufijo_extra)
 
     return resultado
 
@@ -186,11 +204,19 @@ def main():
 
     tk.Label(
         frame,
-        text="Carpeta que contiene las subcarpetas N_capturas:",
+        text="Carpeta con las subcarpetas de capturas:",
     ).grid(row=0, column=0, columnspan=3, sticky="w")
 
     carpeta_var = tk.StringVar()
-    entrada = tk.Entry(frame, textvariable=carpeta_var, width=62)
+    entrada = tk.Entry(
+        frame,
+        textvariable=carpeta_var,
+        width=62,
+        ayuda=(
+            "A cada archivo se le antepone el numero de la carpeta donde esta. "
+            "Una imagen dentro de 27_capturas pasa a empezar por 27_."
+        ),
+    )
     entrada.grid(
         row=1,
         column=0,
@@ -213,14 +239,12 @@ def main():
         pady=(4, 8),
     )
 
-    tk.Label(
-        frame,
-        text=(
-            "Ejemplo: 27_capturas\\captura_000001.jpg\n"
-            "se convertira en 27_capturas\\27_captura_000001.jpg"
-        ),
-        justify="left",
-    ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(0, 8))
+    tk.Label(frame, text="Prefijo adicional:").grid(row=3, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo adicional:").grid(row=3, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    tk.Entry(frame, textvariable=prefijo_var, width=24).grid(row=4, column=0, sticky="w", pady=(4, 8))
+    tk.Entry(frame, textvariable=sufijo_var, width=24).grid(row=4, column=1, sticky="w", pady=(4, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     barra = ttk.Progressbar(
@@ -229,7 +253,7 @@ def main():
         maximum=100,
         length=500,
     )
-    barra.grid(row=3, column=0, columnspan=3, sticky="we", pady=(0, 6))
+    barra.grid(row=6, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
     estado_var = tk.StringVar(value="Seleccione la carpeta principal.")
     tk.Label(
@@ -238,10 +262,10 @@ def main():
         justify="left",
         anchor="w",
         wraplength=520,
-    ).grid(row=4, column=0, columnspan=3, sticky="we", pady=(0, 8))
+    ).grid(row=7, column=0, columnspan=3, sticky="we", pady=(0, 8))
 
     boton_renombrar = tk.Button(frame, text="Corregir nombres")
-    boton_renombrar.grid(row=5, column=0, columnspan=3, sticky="we")
+    boton_renombrar.grid(row=8, column=0, columnspan=3, sticky="we")
 
     def actualizar_progreso(indice: int, total: int, ruta: str):
         porcentaje = ((indice - 1) / total) * 100 if total else 0
@@ -284,6 +308,15 @@ def main():
             messagebox.showerror("Ruta invalida", "La carpeta seleccionada no existe.")
             return
 
+        prefijo_extra = afijo(prefijo_var.get())
+        sufijo_extra = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo_extra) or not afijo_valido(sufijo_extra):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         confirmar = messagebox.askyesno(
             "Confirmar renombrado",
             (
@@ -303,7 +336,12 @@ def main():
 
         def worker():
             try:
-                resultado = corregir_nombres(carpeta, actualizar_progreso)
+                resultado = corregir_nombres(
+                    carpeta,
+                    actualizar_progreso,
+                    prefijo_extra,
+                    sufijo_extra,
+                )
                 root.after(0, finalizar, resultado)
             except Exception as exc:
                 root.after(0, finalizar_error, str(exc))

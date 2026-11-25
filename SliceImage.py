@@ -1,10 +1,22 @@
-﻿from PIL import Image
-import os
+﻿import os
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+from PIL import Image
 
-def slice_image_to_tiles(image_path: str, output_dir: str, tile_size: int, prefix: str = "icon"):
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos, nombre_pieza
+
+
+def slice_image_to_tiles(
+    image_path: str,
+    output_dir: str,
+    tile_size: int,
+    prefix: str = "icon",
+    sufijo: str = "",
+):
+    prefix = afijo(prefix) or "icon"
+    sufijo = afijo(sufijo)
     if tile_size <= 0:
         raise ValueError("El tamano del tile debe ser mayor que 0.")
 
@@ -24,7 +36,8 @@ def slice_image_to_tiles(image_path: str, output_dir: str, tile_size: int, prefi
             right = left + tile_size
             lower = upper + tile_size
             tile = img.crop((left, upper, right, lower))
-            tile.save(os.path.join(output_dir, f"{prefix}_{row}_{col}.png"))
+            nombre = nombre_con_afijos(nombre_pieza(image_path, prefix, row, col), "", sufijo)
+            tile.save(os.path.join(output_dir, nombre))
             saved += 1
 
     return {
@@ -83,12 +96,27 @@ def main():
 
     tk.Label(frame, text="Prefijo:").grid(row=4, column=1, sticky="w")
     prefix_var = tk.StringVar(value="icon")
-    tk.Entry(frame, textvariable=prefix_var, width=20).grid(row=5, column=1, pady=(4, 8), sticky="w")
+    tk.Entry(
+        frame,
+        textvariable=prefix_var,
+        width=16,
+        ayuda="Texto de cada mosaico. Vacio: se usa icon.",
+    ).grid(row=5, column=1, pady=(4, 8), sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=4, column=2, sticky="w")
+    sufijo_var = tk.StringVar()
+    tk.Entry(frame, textvariable=sufijo_var, width=16).grid(row=5, column=2, pady=(4, 8), sticky="w")
 
     def ejecutar_slice():
         image_path = image_var.get().strip()
         output_dir = output_var.get().strip()
-        prefix = prefix_var.get().strip() or "icon"
+        prefix = afijo(prefix_var.get()) or "icon"
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefix) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
 
         if not image_path:
             messagebox.showwarning("Falta imagen", "Seleccione una imagen.")
@@ -108,7 +136,7 @@ def main():
             return
 
         try:
-            info = slice_image_to_tiles(image_path, output_dir, tile_size, prefix)
+            info = slice_image_to_tiles(image_path, output_dir, tile_size, prefix, sufijo)
         except Exception as exc:
             messagebox.showerror("Error", f"Ocurrio un error: {exc}")
             return
@@ -127,7 +155,7 @@ def main():
             f"Guardados: {info['saved']}\nGrid: {info['rows']}x{info['cols']}",
         )
 
-    tk.Button(frame, text="Cortar", command=ejecutar_slice).grid(row=6, column=0, columnspan=3, sticky="we")
+    tk.Button(frame, text="Cortar", command=ejecutar_slice).grid(row=7, column=0, columnspan=3, sticky="we")
 
     root.mainloop()
 

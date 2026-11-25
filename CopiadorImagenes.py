@@ -4,7 +4,10 @@ import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
 from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos
 
 try:
     from PIL import Image, ImageTk
@@ -44,9 +47,14 @@ def listar_imagenes(carpeta_a: str, recursivo: bool = False):
     return imagenes
 
 
-def copiar_sin_conflicto(ruta_src: str, carpeta_destino: str) -> str:
+def copiar_sin_conflicto(
+    ruta_src: str,
+    carpeta_destino: str,
+    prefijo: str = "",
+    sufijo: str = "",
+) -> str:
     """Copia `ruta_src` a `carpeta_destino` evitando sobrescribir (agrega _1, _2, ...)."""
-    nombre_archivo = os.path.basename(ruta_src)
+    nombre_archivo = nombre_con_afijos(os.path.basename(ruta_src), prefijo, sufijo)
     destino = os.path.join(carpeta_destino, nombre_archivo)
 
     contador = 1
@@ -77,7 +85,15 @@ def resolver_carpeta_destino(
     return base
 
 
-def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_alto: int, recursivo: bool = False):
+def abrir_visualizador(
+    carpeta_a: str,
+    carpeta_b: str,
+    carpeta_c: str,
+    umbral_alto: int,
+    recursivo: bool = False,
+    prefijo: str = "",
+    sufijo: str = "",
+):
     if Image is None or ImageTk is None:
         raise RuntimeError(f"No se pudo importar Pillow (PIL). Detalle: {_pil_import_error}")
 
@@ -94,47 +110,47 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
     ventana.geometry(f"800x{screen_height}")
     ventana.minsize(800, 400)
     ventana.resizable(True, True)
-    ventana.configure(bg="#2e2e2e")
+    ventana.configure(bg="#1b1e24")
 
-    frame_imagen = tk.Frame(ventana, bg="#2e2e2e")
+    frame_imagen = tk.Frame(ventana, bg="#1b1e24")
     frame_imagen.pack(expand=True, fill=tk.BOTH)
 
     # Usamos Canvas en lugar de Label para mostrar la imagen.
     # Esto evita que el tamaño de la imagen afecte el tamaño de la ventana
     # y previene el achicamiento progresivo de la barra inferior.
-    canvas = tk.Canvas(frame_imagen, bg="#2e2e2e", highlightthickness=0)
+    canvas = tk.Canvas(frame_imagen, bg="#1b1e24", highlightthickness=0)
     canvas.pack(expand=True, fill=tk.BOTH)
 
-    frame_barra = tk.Frame(ventana, bg="#444444")
+    frame_barra = tk.Frame(ventana, bg="#232830")
     frame_barra.pack(fill=tk.X, side=tk.BOTTOM)
 
     lbl_resolucion = tk.Label(
         frame_barra,
         text="Resolucion: ",
-        font=("Arial", 12),
-        bg="#444444",
-        fg="#ffffff",
+        font=("Segoe UI", 12),
+        bg="#232830",
+        fg="#e7e9ee",
     )
     lbl_resolucion.pack(side=tk.RIGHT, padx=10)
 
     lbl_contador = tk.Label(
         frame_barra,
         text="",
-        font=("Arial", 12),
-        bg="#444444",
-        fg="#ffffff",
+        font=("Segoe UI", 12),
+        bg="#232830",
+        fg="#e7e9ee",
     )
     lbl_contador.pack(side=tk.RIGHT, padx=10)
 
     tk.Label(
         frame_barra,
         text="Ir a imagen:",
-        font=("Arial", 12),
-        bg="#444444",
-        fg="#ffffff",
+        font=("Segoe UI", 12),
+        bg="#232830",
+        fg="#e7e9ee",
     ).pack(side=tk.LEFT, padx=10)
 
-    entry_salto = tk.Entry(frame_barra, font=("Arial", 12), width=6)
+    entry_salto = tk.Entry(frame_barra, font=("Segoe UI", 12), width=6)
     entry_salto.pack(side=tk.LEFT, padx=5)
 
     def mostrar_imagen(indice: int):
@@ -205,7 +221,7 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
             destino_dir = carpeta_c if alto < umbral_alto else carpeta_b
             os.makedirs(destino_dir, exist_ok=True)
 
-            destino = copiar_sin_conflicto(ruta_imagen, destino_dir)
+            destino = copiar_sin_conflicto(ruta_imagen, destino_dir, prefijo, sufijo)
             print(f"Copiado: {ruta_imagen} -> {destino}")
         except Exception as exc:
             messagebox.showerror("Error", f"No se pudo copiar la imagen: {exc}")
@@ -227,8 +243,7 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
         frame_barra,
         text="Anterior",
         command=anterior_imagen,
-        bg="#555555",
-        fg="#ffffff",
+        ayuda="Muestra la imagen anterior. Atajo: A o flecha izquierda.",
     )
     btn_anterior.pack(side=tk.LEFT, padx=10, pady=10)
 
@@ -236,8 +251,7 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
         frame_barra,
         text="Siguiente",
         command=siguiente_imagen,
-        bg="#555555",
-        fg="#ffffff",
+        ayuda="Muestra la imagen siguiente. Atajo: D o flecha derecha.",
     )
     btn_siguiente.pack(side=tk.LEFT, padx=10, pady=10)
 
@@ -245,8 +259,7 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
         frame_barra,
         text="Copiar a carpeta",
         command=copiar_imagen,
-        bg="#555555",
-        fg="#ffffff",
+        ayuda="Copia la imagen visible a la carpeta alta o baja, segun su altura. Atajo: +.",
     )
     btn_copiar.pack(side=tk.LEFT, padx=10, pady=10)
 
@@ -254,8 +267,6 @@ def abrir_visualizador(carpeta_a: str, carpeta_b: str, carpeta_c: str, umbral_al
         frame_barra,
         text="Ir",
         command=saltar_a_imagen,
-        bg="#555555",
-        fg="#ffffff",
     )
     btn_salto.pack(side=tk.LEFT, padx=5)
 
@@ -346,12 +357,12 @@ def main():
         variable=recursivo_var,
     ).grid(row=8, column=0, columnspan=3, sticky="w", pady=(0, 4))
 
-    tk.Label(
-        frame,
-        text='Regla: si la altura de la imagen es < umbral va a "Destino (< umbral)", si no va a "Destino (>= umbral)".\nSi se dejan vacíos, se crean automáticamente "0_ALTO" y "0_BAJO" dentro del origen.\nActiva "Revisar subcarpetas" para incluir imágenes en subcarpetas.\nTeclas: A/Izq anterior, D/Der siguiente, + copiar.',
-        justify="left",
-        wraplength=460,
-    ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(0, 8))
+    tk.Label(frame, text="Prefijo:").grid(row=9, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=9, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    tk.Entry(frame, textvariable=prefijo_var, width=18).grid(row=10, column=0, sticky="w", pady=(4, 8))
+    tk.Entry(frame, textvariable=sufijo_var, width=18).grid(row=10, column=1, sticky="w", pady=(4, 8))
 
     def ejecutar():
         if Image is None or ImageTk is None:
@@ -393,6 +404,15 @@ def main():
             messagebox.showerror("Dato invalido", "El umbral debe ser un entero mayor que 0.")
             return
 
+        prefijo = afijo(prefijo_var.get())
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         # Creamos destinos (si no existen)
         try:
             os.makedirs(dest_b, exist_ok=True)
@@ -402,12 +422,20 @@ def main():
             return
 
         try:
-            abrir_visualizador(origen, dest_b, dest_c, umbral, recursivo=recursivo)
+            abrir_visualizador(
+                origen,
+                dest_b,
+                dest_c,
+                umbral,
+                recursivo=recursivo,
+                prefijo=prefijo,
+                sufijo=sufijo,
+            )
         except Exception as exc:
             messagebox.showerror("Error", f"Ocurrio un error:\n\n{exc}")
 
     tk.Button(frame, text="Abrir visualizador", command=ejecutar).grid(
-        row=10, column=0, columnspan=3, sticky="we"
+        row=13, column=0, columnspan=3, sticky="we"
     )
 
     root.mainloop()

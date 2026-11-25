@@ -75,7 +75,9 @@ import tkinter as tk
 from collections.abc import Callable, Iterator
 from tkinter import filedialog, messagebox, ttk
 
+import aplicacion.tema
 from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos
 
 
 def relanzar_con_python_global() -> bool:
@@ -277,7 +279,11 @@ def mover_duplicados(
     tamano_lote: int = TAMANO_LOTE_PREDETERMINADO,
     al_progresar: CallbackProgreso | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
+    prefijo: str = "",
+    sufijo: str = "",
 ):
+    prefijo = afijo(prefijo)
+    sufijo = afijo(sufijo)
     os.makedirs(carpeta_destino, exist_ok=True)
 
     moved = 0
@@ -299,7 +305,7 @@ def mover_duplicados(
                 break
 
             try:
-                nombre_archivo = os.path.basename(dup_path)
+                nombre_archivo = nombre_con_afijos(os.path.basename(dup_path), prefijo, sufijo)
                 destino = os.path.join(carpeta_destino, nombre_archivo)
 
                 # Evitar conflictos de nombre en destino
@@ -342,6 +348,8 @@ def procesar_carpeta_por_lotes(
     tamano_lote: int = TAMANO_LOTE_PREDETERMINADO,
     al_evento: CallbackEvento | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
+    prefijo: str = "",
+    sufijo: str = "",
 ):
     def emitir(tipo: str, **datos):
         if al_evento is not None:
@@ -410,6 +418,8 @@ def procesar_carpeta_por_lotes(
             ruta=ruta,
         ),
         debe_cancelar=debe_cancelar,
+        prefijo=prefijo,
+        sufijo=sufijo,
     )
     resultado_base.update(
         groups=movimiento["groups"],
@@ -457,7 +467,16 @@ def main():
         text=f"Destino reservado ({NOMBRE_CARPETA_REPETIDAS}):",
     ).grid(row=2, column=0, sticky="w")
     destino_var = tk.StringVar()
-    destino_entry = tk.Entry(frame, textvariable=destino_var, width=50)
+    destino_entry = tk.Entry(
+        frame,
+        textvariable=destino_var,
+        width=50,
+        ayuda=(
+            "Carpeta donde se apartan las copias. "
+            f"Vacia: se crea {NOMBRE_CARPETA_REPETIDAS} dentro de la fuente. "
+            "Puede estar dentro de la fuente; esa carpeta no se vuelve a analizar."
+        ),
+    )
     destino_entry.grid(
         row=3, column=0, columnspan=2, padx=(0, 6), pady=(4, 8), sticky="we"
     )
@@ -485,18 +504,14 @@ def main():
     )
     lote_spinbox.grid(row=5, column=0, sticky="w", pady=(4, 8))
 
-    nota = (
-        "Procesa en segundo plano y por lotes. El destino puede estar dentro "
-        "de la fuente porque se excluye del analisis. Si el campo queda vacio, "
-        f"se creara {NOMBRE_CARPETA_REPETIDAS} dentro de la fuente."
-    )
-    tk.Label(frame, text=nota, justify="left", wraplength=460).grid(
-        row=6,
-        column=0,
-        columnspan=3,
-        sticky="w",
-        pady=(0, 8),
-    )
+    tk.Label(frame, text="Prefijo:").grid(row=6, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=6, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    entrada_prefijo = tk.Entry(frame, textvariable=prefijo_var, width=18)
+    entrada_prefijo.grid(row=7, column=0, sticky="w", pady=(4, 8))
+    entrada_sufijo = tk.Entry(frame, textvariable=sufijo_var, width=18)
+    entrada_sufijo.grid(row=7, column=1, sticky="w", pady=(4, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     barra = ttk.Progressbar(
@@ -506,7 +521,7 @@ def main():
         length=470,
         mode="determinate",
     )
-    barra.grid(row=7, column=0, columnspan=3, sticky="we", pady=(0, 6))
+    barra.grid(row=10, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
     estado_var = tk.StringVar(value="Seleccione las carpetas para comenzar.")
     tk.Label(
@@ -515,10 +530,10 @@ def main():
         justify="left",
         anchor="w",
         wraplength=500,
-    ).grid(row=8, column=0, columnspan=3, sticky="we", pady=(0, 8))
+    ).grid(row=11, column=0, columnspan=3, sticky="we", pady=(0, 8))
 
     botones = tk.Frame(frame)
-    botones.grid(row=9, column=0, columnspan=3, sticky="we")
+    botones.grid(row=12, column=0, columnspan=3, sticky="we")
     botones.columnconfigure(0, weight=1)
     botones.columnconfigure(1, weight=1)
 
@@ -547,6 +562,8 @@ def main():
         fuente_entry.config(state=estado)
         destino_entry.config(state=estado)
         lote_spinbox.config(state=estado)
+        entrada_prefijo.config(state=estado)
+        entrada_sufijo.config(state=estado)
         boton_fuente.config(state=estado)
         boton_destino.config(state=estado)
         boton_ejecutar.config(state=estado)
@@ -696,6 +713,15 @@ def main():
             )
             return
 
+        prefijo = afijo(prefijo_var.get())
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         confirmado = messagebox.askyesno(
             "Confirmar movimiento",
             (
@@ -727,6 +753,8 @@ def main():
                         ("evento", (tipo, datos))
                     ),
                     debe_cancelar=cancelar_evento.is_set,
+                    prefijo=prefijo,
+                    sufijo=sufijo,
                 )
                 mensajes.put(("final", resultado))
             except Exception as exc:

@@ -3,6 +3,8 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
 from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
 from motores.ffmpeg import ffmpeg_disponible
 
@@ -152,10 +154,6 @@ def main():
     tk.Label(frame, text="Resize (w:h):").grid(row=6, column=1, sticky="w")
     resize_var = tk.StringVar(value="640:-1")
     tk.Entry(frame, textvariable=resize_var, width=20).grid(row=7, column=1, pady=(4, 8), sticky="w")
-
-    tk.Label(frame, text='Ej: FPS 12 | Resize "320:-1" (alto automatico)').grid(
-        row=8, column=0, columnspan=3, sticky="w", pady=(0, 8)
-    )
 
     def ejecutar():
         if not ffmpeg_disponible():

@@ -1,8 +1,9 @@
 """
 Busca carpetas vacias dentro de una carpeta seleccionada.
 
-Una carpeta se considera vacia cuando contiene cero elementos inmediatos:
-ningun archivo y ninguna subcarpeta. La carpeta raiz seleccionada no se incluye
+Una carpeta se considera vacia cuando no tiene subcarpetas ni archivos propios.
+Thumbs.db, desktop.ini y .DS_Store no cuentan: son marcas del sistema.
+La carpeta raiz seleccionada no se incluye
 en los resultados. La busqueda es recursiva y se ejecuta en segundo plano para
 mantener activa la interfaz.
 
@@ -20,10 +21,31 @@ import tkinter as tk
 from collections.abc import Callable
 from tkinter import filedialog, messagebox, ttk
 
+import aplicacion.tema
+
 
 CallbackProgreso = Callable[[int, int, str], None]
 CallbackCancelacion = Callable[[], bool]
 NOMBRE_CARPETA_DESTINO = "carpetas vacías"
+NOMBRES_DE_SISTEMA = {"thumbs.db", "desktop.ini", ".ds_store"}
+
+
+def es_marca_de_sistema(nombre: str) -> bool:
+    """Archivos que Windows o macOS dejan en una carpeta que el usuario ve vacia."""
+    return nombre.casefold() in NOMBRES_DE_SISTEMA
+
+
+def entradas_propias(nombres: list[str]) -> list[str]:
+    return [nombre for nombre in nombres if not es_marca_de_sistema(nombre)]
+
+
+def quitar_marcas_de_sistema(carpeta: str) -> None:
+    for nombre in os.listdir(carpeta):
+        if not es_marca_de_sistema(nombre):
+            continue
+        ruta = os.path.join(carpeta, nombre)
+        if os.path.isfile(ruta):
+            os.remove(ruta)
 
 
 def es_ruta_interna(ruta: str, carpeta_raiz: str) -> bool:
@@ -71,7 +93,7 @@ def encontrar_carpetas_vacias(
         subcarpetas.sort(key=str.lower)
         revisadas += 1
 
-        if carpeta_actual != carpeta_raiz and not subcarpetas and not archivos:
+        if carpeta_actual != carpeta_raiz and not subcarpetas and not entradas_propias(archivos):
             vacias.append(carpeta_actual)
 
         if al_progresar is not None and (revisadas % 25 == 0 or revisadas == 1):
@@ -112,8 +134,9 @@ def mover_carpetas_vacias(
                 raise ValueError("La carpeta no pertenece a la raiz seleccionada.")
             if not os.path.isdir(ruta):
                 raise FileNotFoundError("La carpeta ya no existe.")
-            if os.listdir(ruta):
+            if entradas_propias(os.listdir(ruta)):
                 raise OSError("La carpeta ya no esta vacia.")
+            quitar_marcas_de_sistema(ruta)
 
             ruta_relativa = os.path.relpath(ruta, carpeta_raiz)
             destino = os.path.join(carpeta_destino, ruta_relativa)
@@ -157,6 +180,9 @@ def eliminar_carpetas_vacias(
         try:
             if not es_ruta_interna(ruta, carpeta_raiz) or ruta == carpeta_raiz:
                 raise ValueError("La carpeta no pertenece a la raiz seleccionada.")
+            if entradas_propias(os.listdir(ruta)):
+                raise OSError("La carpeta ya no esta vacia.")
+            quitar_marcas_de_sistema(ruta)
             os.rmdir(ruta)
             eliminadas.append(ruta)
         except Exception as exc:

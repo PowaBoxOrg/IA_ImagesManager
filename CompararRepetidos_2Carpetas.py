@@ -45,6 +45,7 @@ import tkinter as tk
 from collections.abc import Callable, Iterator
 from tkinter import filedialog, messagebox, ttk
 
+import aplicacion.tema
 from motores.imagenes import crear_huella_visual as _crear_huella_compartida
 from motores.imagenes import distancia_visual as _distancia_visual_compartida
 from motores.archivos import rutas_iguales as _rutas_iguales_compartida
@@ -510,7 +511,16 @@ def main():
         text=f"Carpeta repetidas ({NOMBRE_CARPETA_REPETIDAS}):",
     ).grid(row=2, column=0, sticky="w")
     rep_var = tk.StringVar()
-    rep_entry = tk.Entry(frame, textvariable=rep_var, width=58)
+    rep_entry = tk.Entry(
+        frame,
+        textvariable=rep_var,
+        width=58,
+        ayuda=(
+            f"Carpeta donde se comparan las copias. "
+            f"Si queda dentro de la original, se excluye de la busqueda. "
+            f"Vacia: se usa {NOMBRE_CARPETA_REPETIDAS}."
+        ),
+    )
     rep_entry.grid(
         row=3, column=0, columnspan=2, padx=(0, 6), pady=(4, 8), sticky="we"
     )
@@ -551,17 +561,6 @@ def main():
         width=12,
     )
     lote_spinbox.grid(row=5, column=1, sticky="w", pady=(4, 8))
-
-    tk.Label(
-        frame,
-        text=(
-            "Similitud minima (0-100): valores altos como 88-95 detectan fotogramas "
-            "muy similares de video. La carpeta de repetidas se excluye automaticamente "
-            "si esta dentro de la original."
-        ),
-        justify="left",
-        wraplength=520,
-    ).grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     barra = ttk.Progressbar(

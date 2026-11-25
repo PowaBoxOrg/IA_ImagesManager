@@ -3,6 +3,8 @@ import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
 from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
 from motores.ffmpeg import ffmpeg_disponible
 
@@ -128,12 +130,6 @@ def main():
     tk.Label(frame, text="Audio codec:").grid(row=6, column=1, sticky="w")
     audio_codec_var = tk.StringVar(value="copy")
     tk.Entry(frame, textvariable=audio_codec_var, width=16).grid(row=7, column=1, pady=(4, 8), sticky="w")
-
-    ayuda = tk.Label(
-        frame,
-        text='Sugerencias: video "copy", "h264", "hevc" | audio "copy", "aac", "ac3"',
-    )
-    ayuda.grid(row=8, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
     def ejecutar():
         if not ffmpeg_disponible():

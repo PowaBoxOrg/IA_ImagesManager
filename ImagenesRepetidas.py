@@ -50,6 +50,8 @@ from collections import defaultdict
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+import aplicacion.tema
+
 from motores.imagenes import crear_huella_visual as _crear_huella_compartida
 from motores.imagenes import distancia_visual as _distancia_visual_compartida
 
@@ -456,7 +458,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
     ventana.title("Grupos de imagenes duplicadas")
     ventana.geometry("1000x700")
     ventana.minsize(620, 420)
-    ventana.configure(bg="#2e2e2e")
+    ventana.configure(bg="#1b1e24")
     ventana.rowconfigure(1, weight=1)
     ventana.rowconfigure(3, weight=0)
     ventana.columnconfigure(0, weight=1)
@@ -500,19 +502,19 @@ def mostrar_grupos_duplicados(duplicados: dict):
         ventana,
         textvariable=cabecera_var,
         font=("Arial", 14, "bold"),
-        bg="#2e2e2e",
+        bg="#1b1e24",
         fg="#ffffff",
         anchor="w",
         padx=12,
         pady=10,
     ).grid(row=0, column=0, sticky="ew")
 
-    frame_visor = tk.Frame(ventana, bg="#2e2e2e")
+    frame_visor = tk.Frame(ventana, bg="#1b1e24")
     frame_visor.grid(row=1, column=0, sticky="nsew")
     frame_visor.rowconfigure(0, weight=1)
     frame_visor.columnconfigure(0, weight=1)
 
-    canvas = tk.Canvas(frame_visor, bg="#2e2e2e", highlightthickness=0)
+    canvas = tk.Canvas(frame_visor, bg="#1b1e24", highlightthickness=0)
     canvas.grid(row=0, column=0, sticky="nsew")
 
     scroll_vertical = tk.Scrollbar(
@@ -536,14 +538,14 @@ def mostrar_grupos_duplicados(duplicados: dict):
 
     scroll_vertical.config(command=_on_scroll)
 
-    frame_imagenes = tk.Frame(canvas, bg="#2e2e2e")
+    frame_imagenes = tk.Frame(canvas, bg="#1b1e24")
     ventana_canvas = canvas.create_window(
         (0, 0),
         window=frame_imagenes,
         anchor="nw",
     )
 
-    frame_navegacion = tk.Frame(ventana, bg="#2e2e2e")
+    frame_navegacion = tk.Frame(ventana, bg="#1b1e24")
     frame_navegacion.grid(row=2, column=0, sticky="ew")
     frame_navegacion.columnconfigure(1, weight=1)
 
@@ -850,7 +852,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
             columna = indice_imagen % columnas
             tarjeta = tk.Frame(
                 frame_imagenes,
-                bg="#3a3a3a",
+                bg="#2b313b",
                 bd=1,
                 relief="solid",
                 padx=10,
@@ -868,7 +870,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 # Contenedor reservado para evitar que la imagen se recorte a barra superior
                 img_container = tk.Frame(
                     tarjeta,
-                    bg="#242424",
+                    bg="#15181d",
                     height=alto_miniatura,
                     width=max(100, ancho_tarjeta - 30),
                 )
@@ -889,7 +891,7 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 image_label = tk.Label(
                     img_container,
                     image=img_tk,
-                    bg="#242424",
+                    bg="#15181d",
                     anchor="center",
                 )
                 image_label.pack(fill="both", expand=True)
@@ -898,9 +900,9 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 tk.Label(
                     tarjeta,
                     text=nombre_archivo,
-                    font=("Arial", 10),
-                    bg="#3a3a3a",
-                    fg="#ffffff",
+                    font=("Segoe UI", 11),
+                    bg="#2b313b",
+                    fg="#e7e9ee",
                     justify="center",
                     wraplength=max(180, ancho_tarjeta - 30),
                 ).pack(fill="x", pady=(0, 2))
@@ -909,9 +911,9 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 tk.Label(
                     tarjeta,
                     text=f"Fecha: {fecha_creacion}",
-                    font=("Arial", 9),
-                    bg="#3a3a3a",
-                    fg="#d6d6d6",
+                    font=("Segoe UI", 10),
+                    bg="#2b313b",
+                    fg="#c5cad3",
                     justify="center",
                 ).pack(fill="x")
 
@@ -924,12 +926,12 @@ def mostrar_grupos_duplicados(duplicados: dict):
                     tarjeta,
                     text="Mantener",
                     variable=var,
-                    bg="#3a3a3a",
-                    fg="#88ff88",
-                    selectcolor="#1f1f1f",
-                    activebackground="#3a3a3a",
-                    activeforeground="#ffffff",
-                    font=("Arial", 9, "bold"),
+                    bg="#2b313b",
+                    fg="#9dcea0",
+                    selectcolor="#d7dde8",
+                    activebackground="#2b313b",
+                    activeforeground="#e7e9ee",
+                    font=("Segoe UI", 11),
                 )
                 chk.pack(fill="x", pady=(2, 0))
 
@@ -937,8 +939,8 @@ def mostrar_grupos_duplicados(duplicados: dict):
                 tk.Label(
                     tarjeta,
                     text=f"Error al cargar {ruta}: {exc}",
-                    fg="red",
-                    bg="#3a3a3a",
+                    fg="#e06c75",
+                    bg="#2b313b",
                     wraplength=max(180, ancho_tarjeta - 30),
                     justify="left",
                 ).pack(fill="both", expand=True)
@@ -1001,37 +1003,31 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_navegacion,
         text="Anterior",
         command=anterior_grupo,
-        bg="#444444",
-        fg="#ffffff",
     )
     btn_anterior.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
     tk.Label(
         frame_navegacion,
         text="Use la rueda del raton para recorrer el grupo.",
-        bg="#2e2e2e",
-        fg="#c8c8c8",
+        bg="#1b1e24",
+        fg="#9aa3b2",
     ).grid(row=0, column=1, padx=10, pady=10)
 
     btn_siguiente = tk.Button(
         frame_navegacion,
         text="Siguiente",
         command=siguiente_grupo,
-        bg="#444444",
-        fg="#ffffff",
     )
     btn_siguiente.grid(row=0, column=2, padx=10, pady=10, sticky="e")
 
     # === Barra de acciones de selección y eliminación ===
-    frame_seleccion = tk.Frame(ventana, bg="#2e2e2e")
+    frame_seleccion = tk.Frame(ventana, bg="#1b1e24")
     frame_seleccion.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 8))
 
     tk.Button(
         frame_seleccion,
         text="Solo primera",
         command=seleccionar_solo_primera,
-        bg="#2f4f2f",
-        fg="#ddffdd",
         width=14,
     ).grid(row=0, column=0, padx=3, pady=2)
 
@@ -1039,8 +1035,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_seleccion,
         text="Todas",
         command=seleccionar_todas,
-        bg="#2f4f2f",
-        fg="#ddffdd",
         width=10,
     ).grid(row=0, column=1, padx=3, pady=2)
 
@@ -1048,8 +1042,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_seleccion,
         text="Ninguna",
         command=seleccionar_ninguna,
-        bg="#4f2f2f",
-        fg="#ffdddd",
         width=10,
     ).grid(row=0, column=2, padx=3, pady=2)
 
@@ -1057,8 +1049,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_seleccion,
         text="Invertir",
         command=invertir_seleccion,
-        bg="#3a3a3a",
-        fg="#ffffff",
         width=10,
     ).grid(row=0, column=3, padx=3, pady=2)
 
@@ -1066,9 +1056,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_seleccion,
         text="🗑 Eliminar las NO seleccionadas de este grupo",
         command=eliminar_no_seleccionadas,
-        bg="#662222",
-        fg="#ffcccc",
-        font=("Arial", 9, "bold"),
         width=36,
     )
     btn_eliminar.grid(row=0, column=4, padx=(10, 3), pady=2)
@@ -1077,9 +1064,6 @@ def mostrar_grupos_duplicados(duplicados: dict):
         frame_seleccion,
         text="🗑 Eliminar TODO el grupo",
         command=eliminar_grupo_completo,
-        bg="#8B0000",
-        fg="#ffffff",
-        font=("Arial", 9, "bold"),
         width=22,
     )
     btn_eliminar_todo.grid(row=0, column=5, padx=(3, 4), pady=2)
@@ -1087,9 +1071,9 @@ def mostrar_grupos_duplicados(duplicados: dict):
     tk.Label(
         frame_seleccion,
         text="Marca las que quieres conservar y usa «Eliminar las NO seleccionadas», o pulsa «Eliminar TODO el grupo» para borrar todas las del grupo actual.",
-        bg="#2e2e2e",
-        fg="#ffaaaa",
-        font=("Arial", 8),
+        bg="#1b1e24",
+        fg="#e7b4b8",
+        font=("Segoe UI", 10),
     ).grid(row=1, column=0, columnspan=6, sticky="w", padx=4, pady=(2, 0))
 
     resize_after_id = None
@@ -1208,18 +1192,6 @@ def main():
         frame, text="Revisar subcarpetas", variable=subcarpetas_var
     )
     subcarpetas_check.grid(row=3, column=2, padx=(8, 0), pady=(4, 8), sticky="w")
-
-    tk.Label(
-        frame,
-        text=(
-            "Usa porcentaje de similitud (huella visual 32x32 gris). "
-            "Valores altos (ej 90-98) detectan fotogramas muy parecidos de video. "
-            f"Procesa por lotes. Solo muestra grupos con rango numerico > {RANGO_NUMERICO_MINIMO}. "
-            "En el visor podrás seleccionar qué imágenes mantener y eliminar el resto del grupo."
-        ),
-        justify="left",
-        wraplength=520,
-    ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     barra = ttk.Progressbar(

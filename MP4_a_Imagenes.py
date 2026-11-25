@@ -5,6 +5,10 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
+from motores.renombrado import nombre_multimedia
+
 
 _error_relanzamiento = ""
 
@@ -113,9 +117,6 @@ def extraer_capturas(
     if cv2 is None:
         raise RuntimeError(f"OpenCV (cv2) no disponible. Detalle: {_cv2_import_error}")
 
-    nombre_video = os.path.splitext(os.path.basename(ruta_video))[0]
-    sufijo_video = nombre_video[:5]
-
     video = cv2.VideoCapture(ruta_video)
     if not video.isOpened():
         raise RuntimeError("No se pudo abrir el video.")
@@ -152,7 +153,7 @@ def extraer_capturas(
             total += 1
             ruta_imagen = os.path.join(
                 carpeta_salida,
-                f"captura_{total:06d}_{sufijo_video}.jpg",
+                nombre_multimedia(ruta_video, "captura", total, ".jpg"),
             )
             guardada = cv2.imwrite(
                 ruta_imagen,
@@ -179,137 +180,10 @@ def extraer_capturas(
 
 
 def main():
-    root = tk.Tk()
-    root.title("MP4 -> Imagenes")
-    root.resizable(False, False)
+    """Abre la ventana unificada en el modo de un solo video."""
+    from MP4_a_Imagenes_Carpeta import main as main_unificado
 
-    frame = tk.Frame(root, padx=12, pady=12)
-    frame.pack()
-
-    tk.Label(frame, text="Video MP4:").grid(row=0, column=0, sticky="w")
-    video_var = tk.StringVar()
-    tk.Entry(frame, textvariable=video_var, width=50).grid(
-        row=1,
-        column=0,
-        columnspan=2,
-        padx=(0, 6),
-        pady=(4, 8),
-        sticky="we",
-    )
-
-    def seleccionar_video():
-        ruta = filedialog.askopenfilename(
-            title="Seleccionar video MP4",
-            filetypes=[("Video MP4", "*.mp4"), ("Todos los archivos", "*.*")],
-        )
-        if ruta:
-            video_var.set(ruta)
-
-    tk.Button(frame, text="Examinar", command=seleccionar_video).grid(
-        row=1,
-        column=2,
-        pady=(4, 8),
-    )
-
-    tk.Label(frame, text="Capturar un frame cada N segundos:").grid(
-        row=2,
-        column=0,
-        columnspan=3,
-        sticky="w",
-    )
-    intervalo_var = tk.StringVar(value="5")
-    intervalo_entry = tk.Entry(frame, textvariable=intervalo_var, width=12)
-    intervalo_entry.grid(row=3, column=0, pady=(4, 4), sticky="w")
-
-    tk.Label(
-        frame,
-        text="Se permiten decimales, por ejemplo: 0.5, 2.5 o 10.",
-    ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
-
-    estado_var = tk.StringVar()
-    tk.Label(
-        frame,
-        textvariable=estado_var,
-        justify="left",
-        wraplength=460,
-    ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
-
-    boton_extraer = tk.Button(frame, text="Extraer imagenes")
-    boton_extraer.grid(row=6, column=0, columnspan=3, sticky="we")
-
-    def finalizar_exito(carpeta_salida: str, total: int):
-        boton_extraer.config(state="normal")
-        estado_var.set(f"Imagenes generadas: {total}")
-        messagebox.showinfo(
-            "Operacion completada",
-            f"Imagenes generadas: {total}\n\nGuardadas en:\n{carpeta_salida}",
-        )
-
-    def finalizar_error(error: str):
-        boton_extraer.config(state="normal")
-        estado_var.set("")
-        messagebox.showerror(
-            "Error",
-            f"No se pudieron extraer las imagenes.\n\n{error}",
-        )
-
-    def ejecutar():
-        ruta_video = video_var.get().strip()
-        if not ruta_video:
-            messagebox.showwarning("Falta video", "Seleccione un archivo de video.")
-            return
-        if not os.path.isfile(ruta_video):
-            messagebox.showerror("Ruta invalida", "El archivo de video no existe.")
-            return
-        if not ruta_video.lower().endswith(".mp4"):
-            messagebox.showerror("Archivo invalido", "Seleccione un archivo con extension .mp4.")
-            return
-
-        try:
-            intervalo = float(intervalo_var.get().strip().replace(",", "."))
-            if intervalo <= 0:
-                raise ValueError()
-        except ValueError:
-            messagebox.showerror(
-                "Dato invalido",
-                "N debe ser un numero mayor que 0.",
-            )
-            return
-
-        if cv2 is None:
-            detalle = (
-                f"No se pudo importar OpenCV (cv2).\n\n"
-                f"Interprete actual:\n{sys.executable}\n\n"
-                f"Detalle:\n{_cv2_import_error}"
-            )
-            if _error_relanzamiento:
-                detalle += f"\n\n{_error_relanzamiento}"
-            messagebox.showerror(
-                "OpenCV no disponible",
-                detalle,
-            )
-            return
-
-        boton_extraer.config(state="disabled")
-        estado_var.set("Extrayendo imagenes... Esto puede tardar segun la duracion del video.")
-
-        def worker():
-            try:
-                carpeta_salida, total = extraer_capturas(ruta_video, intervalo)
-                root.after(
-                    0,
-                    lambda: finalizar_exito(carpeta_salida, total),
-                )
-            except Exception as exc:
-                error = str(exc)
-                root.after(0, lambda: finalizar_error(error))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    boton_extraer.config(command=ejecutar)
-    intervalo_entry.focus_set()
-
-    root.mainloop()
+    main_unificado(modo="archivo")
 
 
 if __name__ == "__main__":

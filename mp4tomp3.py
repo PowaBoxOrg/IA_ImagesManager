@@ -5,6 +5,8 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
 from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
 from motores.ffmpeg import ffmpeg_disponible
 
@@ -173,9 +175,6 @@ def main():
         ventana,
         text="Convertir a MP4",
         command=iniciar_conversion,
-        bg="#4CAF50",
-        fg="white",
-        font=("Arial", 11, "bold"),
     )
     boton_convertir.pack(fill="x", pady=(4, 10))
 

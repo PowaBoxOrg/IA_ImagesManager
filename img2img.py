@@ -9,10 +9,10 @@ Antes de convertirlas, las imagenes se ordenan con el mismo criterio que el
 renombrador numerico: primero por formato y, dentro de cada formato, por la
 fecha interna de la imagen de mas antigua a mas reciente. Las imagenes sin fecha
 interna se colocan al final y se ordenan por su nombre original. Despues reciben
-nombres como "jpg_1.jpg", "webp_1.webp" o "avif_1.avif".
+nombres como "jpg_000001.jpg", "webp_000001.webp" o "avif_000001.avif".
 
 El programa crea dentro de la carpeta elegida una subcarpeta llamada
-"Convertidas_PNG", donde guarda las conversiones con nombres como "jpg_1.png".
+"Convertidas_PNG", donde guarda las conversiones con nombres como "jpg_000001.png".
 Tambien crea una carpeta para los originales de cada formato encontrado, por
 ejemplo "Originales_JPG", "Originales_JPEG", "Originales_WEBP" y
 "Originales_AVIF". Tras intentar la conversion, cada original renombrado se
@@ -43,9 +43,11 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
 from PIL import Image
 
 from RenombradorNumerico import crear_ruta_temporal, obtener_fecha_origen_imagen
+from motores.renombrado import afijo, afijo_valido, indice_nombre, nombre_con_afijos
 
 try:
     # Soporte AVIF para Pillow cuando esta instalado `pillow-avif-plugin`.
@@ -137,7 +139,9 @@ def obtener_imagenes_compatibles(folder_path):
     return imagenes
 
 
-def renombrar_imagenes_por_formato(folder_path, imagenes, output_dir):
+def renombrar_imagenes_por_formato(folder_path, imagenes, output_dir, prefijo="", sufijo=""):
+    prefijo = afijo(prefijo)
+    sufijo = afijo(sufijo)
     temporales = []
 
     try:
@@ -171,8 +175,12 @@ def renombrar_imagenes_por_formato(folder_path, imagenes, output_dir):
 
             numero = contadores[extension]
             while True:
-                nombre_nuevo = f"{etiqueta}_{numero}{extension}"
-                nombre_png = f"{etiqueta}_{numero}.png"
+                nombre_nuevo = nombre_con_afijos(
+                    f"{indice_nombre(numero, etiqueta)}{extension}", prefijo, sufijo
+                )
+                nombre_png = nombre_con_afijos(
+                    f"{indice_nombre(numero, etiqueta)}.png", prefijo, sufijo
+                )
                 ruta_renombrada = os.path.join(folder_path, nombre_nuevo)
                 ruta_original_destino = os.path.join(carpeta_originales, nombre_nuevo)
                 ruta_png = os.path.join(output_dir, nombre_png)
@@ -214,7 +222,7 @@ def convertir_imagen(input_path, output_path, extension):
         convert_avif_to_png(input_path, output_path)
 
 
-def convert_folder_images_to_png(folder_path):
+def convert_folder_images_to_png(folder_path, prefijo="", sufijo=""):
     converted = 0
     organized = 0
     errors = []
@@ -223,7 +231,13 @@ def convert_folder_images_to_png(folder_path):
     os.makedirs(output_dir, exist_ok=True)
 
     imagenes = obtener_imagenes_compatibles(folder_path)
-    renombradas = renombrar_imagenes_por_formato(folder_path, imagenes, output_dir)
+    renombradas = renombrar_imagenes_por_formato(
+        folder_path,
+        imagenes,
+        output_dir,
+        prefijo,
+        sufijo,
+    )
 
     for imagen in renombradas:
         try:
@@ -284,8 +298,17 @@ def main():
             messagebox.showerror("Ruta invalida", "La ruta no existe.")
             return
 
+        prefijo = afijo(prefijo_var.get())
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         try:
-            converted, organized, errors = convert_folder_images_to_png(carpeta)
+            converted, organized, errors = convert_folder_images_to_png(carpeta, prefijo, sufijo)
         except Exception as exc:
             messagebox.showerror("Error", f"Ocurrio un error: {exc}")
             return
@@ -317,8 +340,15 @@ def main():
     boton_examinar = tk.Button(frame, text="Examinar", command=seleccionar_carpeta)
     boton_examinar.grid(row=1, column=2, pady=(4, 8))
 
+    tk.Label(frame, text="Prefijo:").grid(row=2, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=2, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    tk.Entry(frame, textvariable=prefijo_var, width=22).grid(row=3, column=0, sticky="w", pady=(4, 4))
+    tk.Entry(frame, textvariable=sufijo_var, width=22).grid(row=3, column=1, sticky="w", pady=(4, 4))
+
     boton_ejecutar = tk.Button(frame, text="Convertir", command=ejecutar_conversion)
-    boton_ejecutar.grid(row=2, column=0, columnspan=3, sticky="we")
+    boton_ejecutar.grid(row=5, column=0, columnspan=3, sticky="we")
 
     root.mainloop()
 

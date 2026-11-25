@@ -1,7 +1,12 @@
-﻿import threading
+﻿import sys
+import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import aplicacion.tema
 
 try:
     import pyautogui
@@ -14,6 +19,23 @@ try:
 except Exception as exc:  # pragma: no cover
     keyboard = None
     _keyboard_import_error = str(exc)
+
+
+def leer_secuencia(texto: str) -> list[tuple[int, int]]:
+    """Lee una coordenada por linea, como '120, 340' o '120 340'."""
+    puntos = []
+    for linea in texto.splitlines():
+        linea = linea.strip()
+        if not linea:
+            continue
+        if "," in linea:
+            partes = [parte.strip() for parte in linea.split(",") if parte.strip()]
+        else:
+            partes = linea.split()
+        if len(partes) != 2:
+            raise ValueError(f"Coordenada invalida: {linea}")
+        puntos.append((int(float(partes[0])), int(float(partes[1]))))
+    return puntos
 
 
 def main():
@@ -47,18 +69,54 @@ def main():
     use_hotkey_var = tk.BooleanVar(value=False)
     tk.Checkbutton(frame, text="Habilitar hotkey", variable=use_hotkey_var).grid(row=3, column=1, sticky="w")
 
-    tk.Label(frame, textvariable=status_var).grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 8))
+    destino_var = tk.StringVar(value="cursor")
+    x_var = tk.StringVar(value="0")
+    y_var = tk.StringVar(value="0")
+    repeticiones_var = tk.StringVar(value="")
 
-    tk.Label(
-        frame,
-        text=(
-            "Tips: el hotkey es global (funciona fuera de la ventana).\n"
-            "En Windows, `keyboard` puede requerir permisos.\n"
-            "Para detener rapido, desactiva con el boton o cierra la ventana."
-        ),
-        justify="left",
-        wraplength=460,
-    ).grid(row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
+    tk.Label(frame, text="Destino:").grid(row=4, column=0, sticky="w")
+    destinos = tk.Frame(frame)
+    destinos.grid(row=5, column=0, columnspan=3, sticky="w", pady=(4, 4))
+    tk.Radiobutton(
+        destinos,
+        text="Cursor",
+        variable=destino_var,
+        value="cursor",
+        command=lambda: mostrar_destino(),
+        ayuda="Clic donde este el puntero en ese momento.",
+    ).pack(side="left")
+    tk.Radiobutton(
+        destinos,
+        text="Punto fijo",
+        variable=destino_var,
+        value="punto",
+        command=lambda: mostrar_destino(),
+        ayuda="Siempre el mismo pixel, aunque el puntero se mueva.",
+    ).pack(side="left", padx=(12, 0))
+    tk.Radiobutton(
+        destinos,
+        text="Secuencia",
+        variable=destino_var,
+        value="secuencia",
+        command=lambda: mostrar_destino(),
+        ayuda="Recorre los puntos de la lista, uno por clic, y vuelve a empezar.",
+    ).pack(side="left", padx=(12, 0))
+
+    fila_punto = tk.Frame(frame)
+    tk.Label(fila_punto, text="X:").pack(side="left")
+    tk.Entry(fila_punto, textvariable=x_var, width=8).pack(side="left", padx=(6, 12))
+    tk.Label(fila_punto, text="Y:").pack(side="left")
+    tk.Entry(fila_punto, textvariable=y_var, width=8).pack(side="left", padx=(6, 0))
+
+    fila_secuencia = tk.Frame(frame)
+    tk.Label(fila_secuencia, text="Puntos (x, y), uno por linea:").pack(anchor="w")
+    secuencia_texto = tk.Text(fila_secuencia, width=36, height=5)
+    secuencia_texto.pack(fill="x", pady=(4, 0))
+
+    tk.Label(frame, text="Repeticiones (vacio = sin limite):").grid(row=8, column=0, columnspan=2, sticky="w")
+    tk.Entry(frame, textvariable=repeticiones_var, width=12).grid(row=9, column=0, sticky="w", pady=(4, 8))
+
+    tk.Label(frame, textvariable=status_var).grid(row=10, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
     def parse_delay_seconds() -> float:
         try:
@@ -69,6 +127,20 @@ def main():
         if ms < 0:
             raise ValueError("Delay (ms) debe ser >= 0.")
         return ms / 1000.0
+
+    hechos = {"n": 0}
+
+    def punto_del_clic():
+        destino = destino_var.get()
+        if destino == "punto":
+            return int(float(x_var.get().strip())), int(float(y_var.get().strip()))
+        if destino == "secuencia":
+            puntos = leer_secuencia(secuencia_texto.get("1.0", "end"))
+            if not puntos:
+                raise ValueError("La secuencia no tiene puntos.")
+            punto = puntos[hechos["n"] % len(puntos)]
+            return punto
+        return None
 
     def click_loop():
         # Nota: el delay se lee en cada ciclo para permitir ajustar en caliente.
@@ -81,7 +153,16 @@ def main():
 
                 if pyautogui is not None:
                     try:
-                        pyautogui.click(button=button_var.get())
+                        punto = punto_del_clic()
+                        if punto is None:
+                            pyautogui.click(button=button_var.get())
+                        else:
+                            pyautogui.click(punto[0], punto[1], button=button_var.get())
+                        hechos["n"] += 1
+                        limite = repeticiones_var.get().strip()
+                        if limite and hechos["n"] >= int(limite):
+                            running_event.clear()
+                            root.after(0, actualizar_status)
                     except Exception:
                         # Si pyautogui falla, evitamos matar el hilo.
                         pass
@@ -100,10 +181,21 @@ def main():
     def actualizar_status():
         status_var.set("Estado: ACTIVADO" if running_event.is_set() else "Estado: DESACTIVADO")
 
+    def mostrar_destino():
+        if fila_punto.winfo_manager() == "grid":
+            fila_punto.grid_remove()
+        if fila_secuencia.winfo_manager() == "grid":
+            fila_secuencia.grid_remove()
+        if destino_var.get() == "punto":
+            fila_punto.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        elif destino_var.get() == "secuencia":
+            fila_secuencia.grid(row=7, column=0, columnspan=3, sticky="we", pady=(0, 8))
+
     def toggle_running():
         if running_event.is_set():
             running_event.clear()
         else:
+            hechos["n"] = 0
             running_event.set()
         actualizar_status()
 
@@ -169,6 +261,14 @@ def main():
         # Intentar leer delay para validar el dato
         try:
             parse_delay_seconds()
+            if destino_var.get() == "punto":
+                int(float(x_var.get().strip()))
+                int(float(y_var.get().strip()))
+            elif destino_var.get() == "secuencia" and not leer_secuencia(secuencia_texto.get("1.0", "end")):
+                raise ValueError("Escriba al menos un punto, por ejemplo 120, 340.")
+            limite = repeticiones_var.get().strip()
+            if limite and int(limite) <= 0:
+                raise ValueError("Las repeticiones deben ser un entero mayor que 0, o vacio.")
         except Exception as exc:
             messagebox.showerror("Dato invalido", str(exc))
             return
@@ -176,7 +276,8 @@ def main():
         toggle_running()
 
     btn_toggle = tk.Button(frame, text="Iniciar / Pausar", command=validar_deps_y_arrancar)
-    btn_toggle.grid(row=6, column=0, columnspan=3, sticky="we")
+    btn_toggle.grid(row=11, column=0, columnspan=3, sticky="we")
+    mostrar_destino()
 
     def on_close():
         nonlocal hotkey_id

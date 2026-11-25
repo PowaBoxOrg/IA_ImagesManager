@@ -1,6 +1,6 @@
 import os
-import tkinter as tk
-from tkinter import filedialog, messagebox
+
+from motores.renombrado import afijo
 
 
 def generar_nombre_alfabetico(indice: int) -> str:
@@ -23,7 +23,14 @@ def crear_ruta_temporal(directorio: str, indice: int, extension: str) -> str:
         intento += 1
 
 
-def archivos_en_secuencia(archivos: list[dict], varios_tipos: bool) -> bool:
+def archivos_en_secuencia(
+    archivos: list[dict],
+    varios_tipos: bool,
+    prefijo: str = "",
+    sufijo: str = "",
+) -> bool:
+    prefijo = afijo(prefijo)
+    sufijo = afijo(sufijo)
     grupos = {}
     for archivo in archivos:
         grupos.setdefault(archivo["tipo"], []).append(archivo)
@@ -39,7 +46,7 @@ def archivos_en_secuencia(archivos: list[dict], varios_tipos: bool) -> bool:
                 base = f"{etiqueta}_{nombre_alfabetico}"
             else:
                 base = nombre_alfabetico
-            nombres_esperados.add(f"{base}{tipo}")
+            nombres_esperados.add(f"{prefijo}{base}{sufijo}{tipo}".lower())
 
         if nombres_actuales != nombres_esperados:
             return False
@@ -47,19 +54,22 @@ def archivos_en_secuencia(archivos: list[dict], varios_tipos: bool) -> bool:
     return True
 
 
-def renombrar_por_alfabeto(directorio: str):
+def renombrar_por_alfabeto(directorio: str, prefijo: str = "", sufijo: str = ""):
     """Renombra archivos con una secuencia alfabetica.
 
     Si existe un solo formato, usa a.jpg, b.jpg, c.jpg...
     Si existen varios, crea una secuencia independiente para cada formato:
     jpg_a.jpg, jpg_b.jpg, png_a.png, png_b.png...
+    El prefijo y el sufijo se agregan a ese nombre. Vacios, no lo cambian.
 
     Devuelve: (renamed_count, skipped)
     """
+    prefijo = afijo(prefijo)
+    sufijo = afijo(sufijo)
     archivos = []
     for nombre in sorted(os.listdir(directorio), key=str.lower):
         ruta = os.path.join(directorio, nombre)
-        if not os.path.isfile(ruta):
+        if not os.path.isfile(ruta) or nombre.startswith(".__"):
             continue
 
         extension = os.path.splitext(nombre)[1]
@@ -76,7 +86,7 @@ def renombrar_por_alfabeto(directorio: str):
     tipos_archivo = {archivo["tipo"] for archivo in archivos}
     varios_tipos = len(tipos_archivo) >= 2
 
-    if archivos_en_secuencia(archivos, varios_tipos):
+    if archivos_en_secuencia(archivos, varios_tipos, prefijo, sufijo):
         print(
             "Todos los archivos ya estan correctamente nombrados y en secuencia. "
             "No se necesita hacer nada."
@@ -139,14 +149,14 @@ def renombrar_por_alfabeto(directorio: str):
             indice = indice_general
             base = generar_nombre_alfabetico(indice)
 
-        ruta_final = os.path.join(directorio, f"{base}{extension}")
+        ruta_final = os.path.join(directorio, f"{prefijo}{base}{sufijo}{extension}")
         while os.path.exists(ruta_final):
             indice += 1
             if varios_tipos:
                 base = f"{etiquetas_tipo[tipo]}_{generar_nombre_alfabetico(indice)}"
             else:
                 base = generar_nombre_alfabetico(indice)
-            ruta_final = os.path.join(directorio, f"{base}{extension}")
+            ruta_final = os.path.join(directorio, f"{prefijo}{base}{sufijo}{extension}")
 
         nuevo_nombre_final = os.path.basename(ruta_final)
         os.rename(archivo["ruta_temporal"], ruta_final)
@@ -161,51 +171,10 @@ def renombrar_por_alfabeto(directorio: str):
 
 
 def main():
-    root = tk.Tk()
-    root.title("Renombrador alfabetico")
-    root.resizable(False, False)
+    """Abre el renombrador unificado en modo alfabetico."""
+    from RenombradorNumerico import main as main_unificado
 
-    frame = tk.Frame(root, padx=12, pady=12)
-    frame.pack()
-
-    tk.Label(frame, text="Carpeta:").grid(row=0, column=0, sticky="w")
-    carpeta_var = tk.StringVar()
-    entrada = tk.Entry(frame, textvariable=carpeta_var, width=50)
-    entrada.grid(row=1, column=0, columnspan=2, padx=(0, 6), pady=(4, 8), sticky="we")
-
-    def seleccionar_carpeta():
-        carpeta = filedialog.askdirectory()
-        if carpeta:
-            carpeta_var.set(carpeta)
-
-    def ejecutar_renombrado():
-        carpeta = carpeta_var.get().strip()
-        if not carpeta:
-            messagebox.showwarning("Falta carpeta", "Seleccione una carpeta.")
-            return
-        if not os.path.isdir(carpeta):
-            messagebox.showerror("Ruta invalida", "La ruta no existe.")
-            return
-
-        try:
-            renamed_count, skipped = renombrar_por_alfabeto(carpeta)
-        except Exception as exc:
-            messagebox.showerror("Error", f"Ocurrio un error: {exc}")
-            return
-
-        if skipped:
-            messagebox.showinfo("Sin cambios", "Los archivos ya estaban en orden alfabetico.")
-            return
-
-        messagebox.showinfo("Operacion completada", f"Renombrado finalizado. Archivos: {renamed_count}")
-
-    boton_examinar = tk.Button(frame, text="Examinar", command=seleccionar_carpeta)
-    boton_examinar.grid(row=1, column=2, pady=(4, 8))
-
-    boton_ejecutar = tk.Button(frame, text="Renombrar", command=ejecutar_renombrado)
-    boton_ejecutar.grid(row=2, column=0, columnspan=3, sticky="we")
-
-    root.mainloop()
+    main_unificado(modo="alfabetico")
 
 
 if __name__ == "__main__":

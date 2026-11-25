@@ -2,6 +2,10 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos, nombre_multimedia
+
 try:
     from PIL import Image
 except Exception as exc:  # pragma: no cover
@@ -9,12 +13,13 @@ except Exception as exc:  # pragma: no cover
     _pil_import_error = str(exc)
 
 
-def extraer_frames_gif(ruta_gif: str, carpeta_salida: str, prefijo: str = "frame"):
+def extraer_frames_gif(ruta_gif: str, carpeta_salida: str, prefijo: str = "frame", sufijo: str = ""):
     """Extrae todos los frames de un GIF y los guarda como PNG.
 
-    Devuelve: (frames_guardados, error_str|""
-    )
+    Devuelve: (frames_guardados, error_str|"")
     """
+    prefijo = afijo(prefijo) or "frame"
+    sufijo = afijo(sufijo)
     if Image is None:
         return 0, f"No se pudo importar Pillow (PIL). Detalle: {_pil_import_error}"
 
@@ -33,7 +38,11 @@ def extraer_frames_gif(ruta_gif: str, carpeta_salida: str, prefijo: str = "frame
                     # Algunos GIFs pueden fallar al seek; cortamos aqui.
                     break
 
-                nombre_png = f"{prefijo}_{i:04d}.png"
+                nombre_png = nombre_con_afijos(
+                    nombre_multimedia(ruta_gif, prefijo, i + 1, ".png"),
+                    "",
+                    sufijo,
+                )
                 ruta_png = os.path.join(carpeta_salida, nombre_png)
                 gif.save(ruta_png, "PNG")
                 saved += 1
@@ -47,7 +56,7 @@ def extraer_frames_gif(ruta_gif: str, carpeta_salida: str, prefijo: str = "frame
         return 0, err
 
 
-def procesar_carpeta(carpeta_entrada: str, carpeta_salida: str, prefijo: str = "frame"):
+def procesar_carpeta(carpeta_entrada: str, carpeta_salida: str, prefijo: str = "frame", sufijo: str = ""):
     """Busca GIFs en una carpeta y extrae frames a subcarpetas por archivo."""
     total_gifs = 0
     total_frames = 0
@@ -64,7 +73,7 @@ def procesar_carpeta(carpeta_entrada: str, carpeta_salida: str, prefijo: str = "
         nombre_base = os.path.splitext(archivo)[0]
         subcarpeta = os.path.join(carpeta_salida, nombre_base)
 
-        frames, err = extraer_frames_gif(ruta_gif, subcarpeta, prefijo)
+        frames, err = extraer_frames_gif(ruta_gif, subcarpeta, prefijo, sufijo)
         total_gifs += 1
         total_frames += frames
         if err:
@@ -134,8 +143,16 @@ def main():
 
     # Prefijo
     tk.Label(frame, text="Prefijo:").grid(row=6, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=6, column=1, sticky="w")
     prefijo_var = tk.StringVar(value="frame")
-    tk.Entry(frame, textvariable=prefijo_var, width=20).grid(row=7, column=0, pady=(4, 8), sticky="w")
+    sufijo_var = tk.StringVar()
+    tk.Entry(
+        frame,
+        textvariable=prefijo_var,
+        width=20,
+        ayuda="Texto delante de cada frame. Vacio: se usa frame.",
+    ).grid(row=7, column=0, pady=(4, 8), sticky="w")
+    tk.Entry(frame, textvariable=sufijo_var, width=20).grid(row=7, column=1, pady=(4, 8), sticky="w")
 
     def ejecutar():
         if Image is None:
@@ -145,7 +162,14 @@ def main():
         modo = modo_var.get()
         entrada = entrada_var.get().strip()
         salida = salida_var.get().strip()
-        prefijo = prefijo_var.get().strip() or "frame"
+        prefijo = afijo(prefijo_var.get()) or "frame"
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
 
         if not entrada:
             messagebox.showwarning("Falta entrada", "Seleccione una entrada.")
@@ -161,7 +185,7 @@ def main():
 
             # Para archivo, si salida no existe la creamos como carpeta
             os.makedirs(salida, exist_ok=True)
-            frames, err = extraer_frames_gif(entrada, salida, prefijo)
+            frames, err = extraer_frames_gif(entrada, salida, prefijo, sufijo)
             if err:
                 messagebox.showerror("Error", f"No se pudo extraer frames.\n\n{err}")
                 return
@@ -175,7 +199,7 @@ def main():
             return
 
         os.makedirs(salida, exist_ok=True)
-        info = procesar_carpeta(entrada, salida, prefijo)
+        info = procesar_carpeta(entrada, salida, prefijo, sufijo)
         if info["gifs"] == 0:
             messagebox.showinfo("Sin GIFs", "No se encontraron .gif en la carpeta.")
             return
@@ -192,7 +216,7 @@ def main():
             f"GIFs: {info['gifs']}\nFrames: {info['frames']}",
         )
 
-    tk.Button(frame, text="Extraer frames", command=ejecutar).grid(row=8, column=0, columnspan=3, sticky="we")
+    tk.Button(frame, text="Extraer frames", command=ejecutar).grid(row=9, column=0, columnspan=3, sticky="we")
 
     root.mainloop()
 

@@ -4,6 +4,10 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos
+
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
@@ -39,19 +43,30 @@ def _index_to_group(index: int) -> str:
 
 
 class ImageGrouper:
-    def __init__(self, folder_path: str):
+    def __init__(self, folder_path: str, prefijo: str = "", sufijo: str = ""):
         self.folder_path = folder_path
+        self.prefijo = afijo(prefijo)
+        self.sufijo = afijo(sufijo)
         self.next_group_index = 0
         self.scan_existing_groups()
+
+    def _nombre_visible(self, filename: str) -> str:
+        base, extension = os.path.splitext(filename)
+        if self.prefijo and base.startswith(self.prefijo):
+            base = base[len(self.prefijo) :]
+        if self.sufijo and base.endswith(self.sufijo):
+            base = base[: -len(self.sufijo)]
+        return f"{base}{extension}"
 
     def scan_existing_groups(self):
         """Escanea la carpeta para detectar grupos existentes."""
         max_index = -1
         for filename in os.listdir(self.folder_path):
-            if "_" not in filename:
+            visible = self._nombre_visible(filename)
+            if "_" not in visible:
                 continue
 
-            group = filename.split("_", 1)[0]
+            group = visible.split("_", 1)[0]
             if not group.isalpha():
                 continue
 
@@ -72,22 +87,31 @@ class ImageGrouper:
 
         Devuelve: cantidad renombrada.
         """
-        new_images = [
-            f
-            for f in os.listdir(self.folder_path)
-            if f.lower().endswith(".png") and "_" not in f and os.path.splitext(f)[0].isdigit()
-        ]
+        new_images = []
+        for nombre in os.listdir(self.folder_path):
+            visible = self._nombre_visible(nombre)
+            if (
+                visible.lower().endswith(".png")
+                and "_" not in visible
+                and os.path.splitext(visible)[0].isdigit()
+                and os.path.isfile(os.path.join(self.folder_path, nombre))
+            ):
+                new_images.append(nombre)
 
         if not new_images:
             return 0
 
-        new_images.sort(key=lambda x: int(os.path.splitext(x)[0]))
+        new_images.sort(key=lambda x: int(os.path.splitext(self._nombre_visible(x))[0]))
 
         group_char = _index_to_group(self.next_group_index)
         renamed = 0
 
         for filename in new_images:
-            new_name = f"{group_char}_{filename}"
+            new_name = nombre_con_afijos(
+                f"{group_char}_{filename}",
+                self.prefijo,
+                self.sufijo,
+            )
             old_path = os.path.join(self.folder_path, filename)
             new_path = os.path.join(self.folder_path, new_name)
 
@@ -148,9 +172,18 @@ def main():
 
     tk.Button(frame, text="Examinar", command=seleccionar_carpeta).grid(row=1, column=2, pady=(4, 8))
 
+    tk.Label(frame, text="Prefijo:").grid(row=2, column=0, sticky="w")
+    tk.Label(frame, text="Sufijo:").grid(row=2, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    entrada_prefijo = tk.Entry(frame, textvariable=prefijo_var, width=18)
+    entrada_prefijo.grid(row=3, column=0, sticky="w", pady=(4, 8))
+    entrada_sufijo = tk.Entry(frame, textvariable=sufijo_var, width=18)
+    entrada_sufijo.grid(row=3, column=1, sticky="w", pady=(4, 8))
+
     status_var = tk.StringVar(value="")
     tk.Label(frame, textvariable=status_var, justify="left", wraplength=460).grid(
-        row=2, column=0, columnspan=3, sticky="w", pady=(0, 8)
+        row=5, column=0, columnspan=3, sticky="w", pady=(0, 8)
     )
 
     observer = None
@@ -164,7 +197,7 @@ def main():
         carpeta = folder_var.get().strip()
         if carpeta and os.path.isdir(carpeta):
             try:
-                g = ImageGrouper(carpeta)
+                g = ImageGrouper(carpeta, prefijo_var.get(), sufijo_var.get())
                 set_status(f"Listo. Siguiente grupo: {g.next_group_label}")
             except Exception:
                 set_status("")
@@ -195,9 +228,23 @@ def main():
             messagebox.showerror("Ruta invalida", "La carpeta no existe.")
             return
 
+        prefijo = afijo(prefijo_var.get())
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         try:
-            if grouper is None or grouper.folder_path != carpeta:
-                grouper = ImageGrouper(carpeta)
+            if (
+                grouper is None
+                or grouper.folder_path != carpeta
+                or grouper.prefijo != prefijo
+                or grouper.sufijo != sufijo
+            ):
+                grouper = ImageGrouper(carpeta, prefijo, sufijo)
             renamed = grouper.process_new_images()
         except Exception as exc:
             messagebox.showerror("Error", f"Ocurrio un error:\n\n{exc}")
@@ -231,8 +278,17 @@ def main():
         if running:
             return
 
+        prefijo = afijo(prefijo_var.get())
+        sufijo = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo) or not afijo_valido(sufijo):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         try:
-            grouper = ImageGrouper(carpeta)
+            grouper = ImageGrouper(carpeta, prefijo, sufijo)
             # Procesar lo pendiente al iniciar
             grouper.process_new_images()
 
@@ -245,6 +301,8 @@ def main():
             btn_iniciar.config(state="disabled")
             btn_detener.config(state="normal")
             btn_procesar.config(state="disabled")
+            entrada_prefijo.config(state="disabled")
+            entrada_sufijo.config(state="disabled")
             set_status(f"Monitoreando... Siguiente grupo: {grouper.next_group_label}")
 
         except Exception as exc:
@@ -275,16 +333,18 @@ def main():
             btn_iniciar.config(state="normal")
             btn_detener.config(state="disabled")
             btn_procesar.config(state="normal")
+            entrada_prefijo.config(state="normal")
+            entrada_sufijo.config(state="normal")
             actualizar_estado_inicial()
 
     btn_procesar = tk.Button(frame, text="Procesar ahora", command=procesar_ahora)
-    btn_procesar.grid(row=3, column=0, columnspan=3, sticky="we")
+    btn_procesar.grid(row=6, column=0, columnspan=3, sticky="we")
 
     btn_iniciar = tk.Button(frame, text="Iniciar monitoreo", command=iniciar)
-    btn_iniciar.grid(row=4, column=0, columnspan=2, sticky="we", pady=(8, 0))
+    btn_iniciar.grid(row=7, column=0, columnspan=2, sticky="we", pady=(8, 0))
 
     btn_detener = tk.Button(frame, text="Detener", command=detener, state="disabled")
-    btn_detener.grid(row=4, column=2, sticky="we", pady=(8, 0))
+    btn_detener.grid(row=7, column=2, sticky="we", pady=(8, 0))
 
     def on_close():
         try:

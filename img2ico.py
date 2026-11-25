@@ -1,7 +1,9 @@
 ﻿import os
-from PIL import Image
 import tkinter as tk
 from tkinter import filedialog, messagebox
+
+import aplicacion.tema
+from PIL import Image
 
 
 def convertir_a_ico(ruta_entrada: str, ruta_salida: str | None = None, tamanos=(16, 24, 32, 48, 64, 128, 256)):

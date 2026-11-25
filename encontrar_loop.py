@@ -3,6 +3,11 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import aplicacion.tema
+from motores.archivos import ruta_disponible
+from motores.ffmpeg import ejecutar as ejecutar_ffmpeg
+from motores.ffmpeg import ffmpeg_disponible
+
 try:
     import cv2
 except Exception as exc:  # pragma: no cover
@@ -79,6 +84,53 @@ def encontrar_loop(video_path: str, skip_frames: int = 30, threshold: float = 10
     }
 
 
+def punto_de_corte(resultado: dict) -> int:
+    """Frame donde el video vuelve a coincidir. El tramo util termina justo antes."""
+    candidatos = [frame for frame, _error in resultado.get("candidates") or [] if frame > 0]
+    if candidatos:
+        return min(candidatos)
+    mejor = int(resultado.get("best_frame") or -1)
+    return mejor if mejor > 0 else -1
+
+
+def fotogramas_por_segundo(video_path: str) -> float:
+    if cv2 is None:
+        return 0.0
+    captura = cv2.VideoCapture(video_path)
+    try:
+        ritmo = float(captura.get(cv2.CAP_PROP_FPS) or 0)
+    finally:
+        captura.release()
+    if ritmo <= 1:
+        return 0.0
+    return ritmo
+
+
+def exportar_tramo(video_path: str, frame_fin: int, destino: str = "") -> tuple[bool, str]:
+    """Guarda desde el inicio hasta el frame que repite el primero, sin incluirlo."""
+    if frame_fin <= 0:
+        return False, "No hay un segundo frame igual al que cortar."
+    if not ffmpeg_disponible():
+        return False, "FFmpeg no esta disponible."
+    ritmo = fotogramas_por_segundo(video_path)
+    if ritmo <= 0:
+        return False, "No se pudo leer la velocidad de frames del video."
+    carpeta = os.path.dirname(video_path)
+    base = os.path.splitext(os.path.basename(video_path))[0]
+    if not destino:
+        destino = ruta_disponible(carpeta, f"{base}_loop.mp4")
+    duracion = frame_fin / ritmo
+    base = ["-i", video_path, "-t", f"{duracion:.6f}", "-map", "0:v:0"]
+    cierre = ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-y", destino]
+    resultado = ejecutar_ffmpeg(base + ["-map", "0:a:0?", "-c:a", "aac", *cierre])
+    if resultado.correcto and os.path.isfile(destino):
+        return True, destino
+    resultado = ejecutar_ffmpeg(base + cierre)
+    if resultado.correcto and os.path.isfile(destino):
+        return True, destino
+    return False, resultado.error or "No se pudo exportar el tramo."
+
+
 def main():
     root = tk.Tk()
     root.title("Encontrar loop (video)")
@@ -119,8 +171,13 @@ def main():
         row=4, column=0, columnspan=3, sticky="w", pady=(0, 8)
     )
 
-    boton = tk.Button(frame, text="Analizar")
-    boton.grid(row=5, column=0, columnspan=3, sticky="we")
+    acciones = tk.Frame(frame)
+    acciones.grid(row=5, column=0, columnspan=3, sticky="we")
+    boton = tk.Button(acciones, text="Analizar")
+    boton.pack(side="left", fill="x", expand=True)
+    boton_exportar = tk.Button(acciones, text="Exportar tramo", state="disabled")
+    boton_exportar.pack(side="left", fill="x", expand=True, padx=(8, 0))
+    ultimo = {"video": "", "corte": -1}
 
     def ejecutar_bg():
         video_path = video_var.get().strip()
@@ -166,12 +223,24 @@ def main():
 
                 # Mostrar algunos candidatos en el dialogo sin saturar
                 preview = "\n".join([f"Frame {f}: {e:.4f}" for (f, e) in candidates[:10]])
+                corte = punto_de_corte(result)
+                ultimo["video"] = video_path
+                ultimo["corte"] = corte
+                if corte > 0:
+                    lines.append(f"Tramo exportable: inicio hasta el frame {corte}.")
+
                 if preview:
                     msg = f"{lines[0]}\n{lines[1]}\n\nPrimeros candidatos:\n{preview}"
                 else:
-                    msg = f"{lines[0]}\n{lines[1]}\n\nNo se encontraron candidatos bajo el threshold." 
+                    msg = f"{lines[0]}\n{lines[1]}\n\nNo se encontraron candidatos bajo el threshold."
+                if corte > 0:
+                    msg += f"\n\nEl tramo va del inicio al frame {corte}, sin repetir ese frame."
 
-                root.after(0, lambda: messagebox.showinfo("Resultado", msg))
+                def mostrar():
+                    boton_exportar.config(state="normal" if corte > 0 else "disabled")
+                    messagebox.showinfo("Resultado", msg)
+
+                root.after(0, mostrar)
 
             except Exception as exc:
                 root.after(0, lambda: messagebox.showerror("Error", f"Ocurrio un error:\n\n{exc}"))
@@ -181,7 +250,30 @@ def main():
         boton.config(state="disabled")
         threading.Thread(target=worker, daemon=True).start()
 
+    def exportar():
+        video_path = ultimo["video"]
+        corte = ultimo["corte"]
+        if corte <= 0 or not video_path:
+            messagebox.showwarning("Sin tramo", "Primero analiza un video que tenga un frame repetido.")
+            return
+
+        def worker():
+            try:
+                status_var.set("Exportando el tramo...")
+                ok, detalle = exportar_tramo(video_path, corte)
+                if ok:
+                    root.after(0, lambda: messagebox.showinfo("Operacion completada", f"Tramo guardado en:\n{detalle}"))
+                    root.after(0, lambda: status_var.set(f"Tramo guardado en:\n{detalle}"))
+                else:
+                    root.after(0, lambda: messagebox.showerror("Error", detalle))
+            finally:
+                root.after(0, lambda: boton_exportar.config(state="normal"))
+
+        boton_exportar.config(state="disabled")
+        threading.Thread(target=worker, daemon=True).start()
+
     boton.config(command=ejecutar_bg)
+    boton_exportar.config(command=exportar)
 
     root.mainloop()
 

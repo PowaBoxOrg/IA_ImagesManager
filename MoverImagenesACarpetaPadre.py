@@ -10,9 +10,12 @@ from dataclasses import dataclass, field
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
+import aplicacion.tema
+
 from motores.archivos import ruta_dentro_de as _ruta_dentro_de_compartida
 from motores.archivos import ruta_normalizada as _ruta_normalizada_compartida
 from motores.archivos import rutas_iguales as _rutas_iguales_compartida
+from motores.renombrado import afijo, afijo_valido, nombre_con_afijos, nombre_con_numero_carpeta
 
 
 EXTENSIONES_IMAGEN = {
@@ -39,7 +42,6 @@ NOMBRES_RESERVADOS_WINDOWS = {
 }
 NOMBRE_CARPETA_DESTINO = "0_IMAGENES_EXTRAIDAS"
 PATRON_CARPETA_CAPTURAS = re.compile(r"^(\d+)_capturas$", re.IGNORECASE)
-PATRON_PREFIJO_CAPTURA = re.compile(r"^\d+_(captura(?:[_ -].*)?)$", re.IGNORECASE)
 NUMERO_MINIMO_CARPETA = 1
 NUMERO_MAXIMO_CARPETA = 1999
 LIMITE_INCIDENCIAS = 15
@@ -138,18 +140,10 @@ def crear_nombre_destino_con_prefijo(
     nombre_archivo: str,
     prefijo: str | None,
 ) -> tuple[str, bool]:
-    if not prefijo:
+    nuevo = nombre_con_numero_carpeta(nombre_archivo, prefijo)
+    if nuevo is None:
         return nombre_archivo, False
-
-    prefijo_esperado = f"{prefijo}_"
-    if nombre_archivo.startswith(prefijo_esperado):
-        return nombre_archivo, False
-
-    coincidencia = PATRON_PREFIJO_CAPTURA.fullmatch(nombre_archivo)
-    if coincidencia:
-        return f"{prefijo}_{coincidencia.group(1)}", True
-
-    return f"{prefijo}_{nombre_archivo}", True
+    return nuevo, True
 
 
 def es_miembro_regular(info: zipfile.ZipInfo) -> bool:
@@ -315,10 +309,12 @@ def mover_imagen(
     imagen: ImagenOrigen,
     carpeta_destino: str,
     resultado: Resultado,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
 ):
     ruta_destino, ajustado = ruta_disponible(
         carpeta_destino,
-        imagen.nombre_destino,
+        nombre_con_afijos(imagen.nombre_destino, prefijo_extra, sufijo_extra),
     )
 
     try:
@@ -338,6 +334,8 @@ def extraer_miembro_zip(
     carpeta_destino: str,
     resultado: Resultado,
     prefijo: str | None = None,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
 ):
     nombre = nombre_miembro_zip(info)
     if not nombre:
@@ -351,6 +349,7 @@ def extraer_miembro_zip(
         nombre,
         prefijo_destino,
     )
+    nombre_destino = nombre_con_afijos(nombre_destino, prefijo_extra, sufijo_extra)
     ruta_destino, ajustado = ruta_disponible(carpeta_destino, nombre_destino)
     descriptor, ruta_temporal = tempfile.mkstemp(
         prefix=".__extraer_zip_",
@@ -390,6 +389,8 @@ def ejecutar_trabajo(
     resultado: Resultado,
     al_progresar: CallbackProgreso | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
 ) -> Resultado:
     procesadas = 0
     total = trabajo.total
@@ -399,7 +400,7 @@ def ejecutar_trabajo(
             resultado.cancelado = True
             return resultado
 
-        mover_imagen(imagen, carpeta_destino, resultado)
+        mover_imagen(imagen, carpeta_destino, resultado, prefijo_extra, sufijo_extra)
         procesadas += 1
         if al_progresar is not None:
             al_progresar(procesadas, total, imagen.ruta)
@@ -424,6 +425,8 @@ def ejecutar_trabajo(
                         carpeta_destino,
                         resultado,
                         prefijo=archivo.prefijo,
+                        prefijo_extra=prefijo_extra,
+                        sufijo_extra=sufijo_extra,
                     )
                     procesadas += 1
                     if al_progresar is not None:
@@ -448,7 +451,11 @@ def aplanar_imagenes(
     carpeta_destino: str | None = None,
     al_progresar: CallbackProgreso | None = None,
     debe_cancelar: CallbackCancelacion | None = None,
+    prefijo_extra: str = "",
+    sufijo_extra: str = "",
 ) -> Resultado:
+    prefijo_extra = afijo(prefijo_extra)
+    sufijo_extra = afijo(sufijo_extra)
     carpeta_raiz = os.path.abspath(carpeta_raiz)
     carpeta_destino = os.path.abspath(carpeta_destino or carpeta_raiz)
     os.makedirs(carpeta_destino, exist_ok=True)
@@ -477,6 +484,8 @@ def aplanar_imagenes(
         resultado,
         al_progresar=al_progresar,
         debe_cancelar=debe_cancelar,
+        prefijo_extra=prefijo_extra,
+        sufijo_extra=sufijo_extra,
     )
 
 
@@ -516,7 +525,16 @@ def main():
     ).grid(row=0, column=0, columnspan=2, sticky="w")
 
     carpeta_var = tk.StringVar()
-    entrada_origen = ttk.Entry(frame, textvariable=carpeta_var, width=66)
+    entrada_origen = ttk.Entry(
+        frame,
+        textvariable=carpeta_var,
+        width=66,
+        ayuda=(
+            "Recorre las subcarpetas, mueve las imagenes y extrae los ZIP al destino. "
+            "Si la subcarpeta empieza por un numero, ese numero se antepone al archivo. "
+            "No borra las carpetas originales ni sobrescribe archivos."
+        ),
+    )
     entrada_origen.grid(row=1, column=0, padx=(0, 8), pady=(4, 10), sticky="ew")
 
     def seleccionar_carpeta_origen():
@@ -563,6 +581,7 @@ def main():
         variable=modo_destino_var,
         value="personalizada",
         command=actualizar_modo_destino,
+        ayuda=f"Crea o reutiliza la carpeta {NOMBRE_CARPETA_DESTINO} dentro de la ubicacion que elijas.",
     )
     radio_personalizada.grid(row=4, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
@@ -587,17 +606,14 @@ def main():
     boton_examinar_destino.grid(row=5, column=1, pady=(4, 10), sticky="ew")
     actualizar_modo_destino()
 
-    ttk.Label(
-        frame,
-        text=(
-            "Se revisaran las subcarpetas de la carpeta origen.\n"
-            "Las imagenes se moveran al destino elegido y tambien se extraeran alli los .zip.\n"
-            "Si provienen de carpetas N_capturas, se antepondra N_ al nombre.\n"
-            f"El destino personalizado usa la carpeta normalizada {NOMBRE_CARPETA_DESTINO}.\n"
-            "Las carpetas y los ZIP originales no se eliminan. No se sobrescriben archivos."
-        ),
-        justify="left",
-    ).grid(row=6, column=0, columnspan=2, sticky="w", pady=(0, 10))
+    ttk.Label(frame, text="Prefijo adicional:").grid(row=6, column=0, sticky="w")
+    ttk.Label(frame, text="Sufijo adicional:").grid(row=6, column=1, sticky="w")
+    prefijo_var = tk.StringVar()
+    sufijo_var = tk.StringVar()
+    entrada_prefijo = ttk.Entry(frame, textvariable=prefijo_var, width=28)
+    entrada_prefijo.grid(row=7, column=0, sticky="w", pady=(4, 8))
+    entrada_sufijo = ttk.Entry(frame, textvariable=sufijo_var, width=28)
+    entrada_sufijo.grid(row=7, column=1, sticky="w", pady=(4, 8))
 
     progreso_var = tk.DoubleVar(value=0)
     progreso = ttk.Progressbar(
@@ -606,7 +622,7 @@ def main():
         maximum=100,
         length=530,
     )
-    progreso.grid(row=7, column=0, columnspan=2, sticky="ew")
+    progreso.grid(row=10, column=0, columnspan=2, sticky="ew")
 
     estado_var = tk.StringVar(value="Seleccione la carpeta a revisar.")
     ttk.Label(
@@ -615,10 +631,10 @@ def main():
         justify="left",
         anchor="w",
         wraplength=550,
-    ).grid(row=8, column=0, columnspan=2, sticky="ew", pady=(8, 10))
+    ).grid(row=11, column=0, columnspan=2, sticky="ew", pady=(8, 10))
 
     botones = ttk.Frame(frame)
-    botones.grid(row=9, column=0, columnspan=2, sticky="ew")
+    botones.grid(row=12, column=0, columnspan=2, sticky="ew")
     botones.columnconfigure(0, weight=1)
     botones.columnconfigure(1, weight=1)
 
@@ -628,6 +644,8 @@ def main():
         estado = "disabled" if en_proceso else "normal"
         entrada_origen.config(state=estado)
         boton_examinar_origen.config(state=estado)
+        entrada_prefijo.config(state=estado)
+        entrada_sufijo.config(state=estado)
         radio_padre.config(state=estado)
         radio_personalizada.config(state=estado)
         if en_proceso:
@@ -741,6 +759,15 @@ def main():
         if not confirmado:
             return
 
+        prefijo_extra = afijo(prefijo_var.get())
+        sufijo_extra = afijo(sufijo_var.get())
+        if not afijo_valido(prefijo_extra) or not afijo_valido(sufijo_extra):
+            messagebox.showerror(
+                "Nombre invalido",
+                "El prefijo o el sufijo contiene caracteres no permitidos en un nombre de archivo.",
+            )
+            return
+
         cancelar_evento.clear()
         progreso_var.set(0)
         configurar_controles(True)
@@ -753,6 +780,8 @@ def main():
                     carpeta_destino=destino,
                     al_progresar=actualizar_progreso,
                     debe_cancelar=cancelar_evento.is_set,
+                    prefijo_extra=prefijo_extra,
+                    sufijo_extra=sufijo_extra,
                 )
                 root.after(0, finalizar, resultado)
             except Exception as exc:
